@@ -167,6 +167,28 @@ The following structure is planned and may evolve during development.
     └── methodology.md
 ```
 
+## Available Data Preparation Program
+
+[`sas/01_data_preparation.sas`](sas/01_data_preparation.sas) implements the
+supplied preparation code using the uploaded
+[`robincar_example_data.csv`](robincar_example_data.csv) at the repository root.
+Upload the CSV to an accessible directory on your SAS server. In
+[`sas/utilities.SAS`](sas/utilities.SAS), edit the `csv_path` argument in the
+`%car_config()` call to your full server file path (without quotation marks).
+Run `utilities.SAS` first, then `01_data_preparation.sas`, in the same SAS
+session. Each colleague configures their own server path in `utilities.SAS`;
+the preparation program reads the shared macro variable `input_csv`.
+Repeat configuration when starting a new session. Import uses the uploaded
+server file directly, without a GitHub HTTP request.
+
+Submit the full program to import, validate, standardize, and summarize the
+data. It creates `WORK.ANALYSIS_DATA`, `WORK.ALLOCATION_SUMMARY`,
+`WORK.BASELINE_SUMMARY`, and `WORK.QC_ISSUES`. All three source arms (0, 1, 2)
+are retained by default, following the supplied code. Set `analysis_arms` to
+`0 1` only when using the matching two-arm R reference analysis. Randomization
+design remains `NOT_VERIFIED` until supported by source documentation.
+SAS execution and runtime validation remain pending.
+
 ## Available Experimental Example
 
 [`examples/binomial_gcomp_mi.sas`](examples/binomial_gcomp_mi.sas) contains an
