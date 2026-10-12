@@ -109,22 +109,37 @@ Planned outputs include:
 - 95% confidence intervals
 - Wald-type hypothesis tests
 
-Particular attention will be given to the treatment-allocation dependence introduced by covariate-adaptive randomization.
+
 
 ## Planned SAS Implementation
 
-The implementation will primarily use standard SAS procedures, including:
+The project will implement the core functionality of the R package **RobinCar** using standard SAS procedures. Each program will focus on a specific component of the estimation workflow, with reusable SAS macros developed where appropriate.
 
-| SAS Procedure | Intended Purpose |
+### Program-to-Function Mapping
+
+| SAS Program | Proposed SAS Macro | RobinCar Function | Description |
+|---|---|---|---|
+| `01_data_preparation.sas` | `%car_prepare()` | Data preprocessing within `robincar_linear()` / `robincar_glm()` | Prepare analysis datasets, treatment indicators, baseline covariates, and randomization strata. |
+| `02_outcome_models.sas` | `%car_fit()` | `robincar_linear()` | Fit ANOVA, ANCOVA, and ANHECOVA working models using linear regression. |
+| `03_aipw_estimation.sas` | `%car_aipw()` | `robincar_linear()` / `robincar_glm()` | Generate treatment-specific predictions and calculate AIPW-adjusted treatment means. |
+| `04_joint_calibration.sas` | `%car_calibrate()` | `robincar_calibrate()` | Perform joint calibration using predicted outcomes and randomization strata. |
+| `05_variance_estimation.sas` | `%car_variance()` | Variance estimation within `robincar_linear()` / `robincar_glm()` | Estimate the asymptotic variance-covariance matrix under the specified randomization scheme. |
+| `06_treatment_contrasts.sas` | `%car_contrast()` | `robincar_contrast()` | Calculate treatment differences, standard errors, confidence intervals, and hypothesis tests. |
+| `07_validation.sas` | `%car_validate()` | RobinCar reference outputs | Compare SAS estimates and inferential results against the R implementation. |
+
+
+
+### SAS Procedures
+
+| SAS Procedure | Intended Use |
 |---|---|
-| `PROC REG` | Linear working outcome models |
-| `PROC GLM` | ANCOVA and ANHECOVA |
-| `PROC SQL` | Data aggregation and AIPW estimation |
-| `DATA Step` | Data preparation and prediction calculations |
-| `PROC IML` | Matrix calculations and robust variance estimation |
-| `PROC COMPARE` | Numerical validation and quality control |
+| `PROC REG` | Fit linear working outcome models |
+| `PROC GLM` | Implement ANCOVA and ANHECOVA |
+| `PROC SQL` | Aggregate outcomes and predictions for AIPW estimation |
+| `DATA Step` | Prepare analysis datasets and calculate predicted outcomes |
+| `PROC IML` | Perform matrix calculations for calibration and variance estimation |
+| `PROC COMPARE` | Validate SAS outputs against reference results |
 
-The implementation may be organized into reusable SAS macros.
 
 ## Proposed Repository Structure
 
