@@ -71,19 +71,22 @@ ANHECOVA allows the relationship between baseline covariates and outcomes to dif
 The treatment-specific AIPW estimator considered in this project is:
 
 $$
-\hat\theta_a^{AIPW}
-=
-\bar Y_a
--\frac{1}{n_a}\sum_{i:A_i=a}\hat\mu_a(X_i)
-+\frac{1}{n}\sum_{i=1}^{n}\hat\mu_a(X_i)
+\begin{aligned}
+\widehat{\theta}_a^{\mathrm{AIPW}}
+&= \overline{Y}_a
+-\frac{1}{n_a}\sum_{i:A_i=a}\widehat{\mu}_a(X_i) \\
+&\quad +\frac{1}{n}\sum_{i=1}^{n}\widehat{\mu}_a(X_i)
+\end{aligned}
 $$
 
-where $\hat\mu_a(X_i)$ is the working model prediction under treatment arm $a$.
+where $\widehat{\mu}_a(X_i)$ is the working model prediction under treatment arm $a$.
 
 For two treatment arms, the adjusted treatment effect is estimated as:
 
 $$
-\widehat{ATE}=\hat\theta_1^{AIPW}-\hat\theta_0^{AIPW}
+\widehat{\mathrm{ATE}}
+= \widehat{\theta}_1^{\mathrm{AIPW}}
+- \widehat{\theta}_0^{\mathrm{AIPW}}
 $$
 
 The estimator combines observed outcomes with model-based predictions to adjust for baseline covariate imbalances.
