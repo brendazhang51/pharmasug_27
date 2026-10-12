@@ -40,29 +40,29 @@ For a two-arm randomized trial with continuous outcomes, the project will examin
 
 **ANOVA — Unadjusted model**
 
-\[
+$$
 Y_i=\beta_0+\beta_1 A_i+\epsilon_i
-\]
+$$
 
 **ANCOVA — Common-slope adjustment**
 
-\[
+$$
 Y_i=\beta_0+\beta_1 A_i+\beta_2^T X_i+\epsilon_i
-\]
+$$
 
 **ANHECOVA — Heterogeneous-slope adjustment**
 
-\[
+$$
 Y_i=\beta_0+\beta_1 A_i+\beta_2^T X_i+
 \beta_3^T(A_iX_i)+\epsilon_i
-\]
+$$
 
 where:
 
-- \(Y_i\): Observed continuous outcome
-- \(A_i\): Treatment assignment
-- \(X_i\): Baseline covariates
-- \(\epsilon_i\): Regression error
+- $Y_i$: Observed continuous outcome
+- $A_i$: Treatment assignment
+- $X_i$: Baseline covariates
+- $\epsilon_i$: Regression error
 
 ANHECOVA allows the relationship between baseline covariates and outcomes to differ across treatment arms.
 
@@ -70,21 +70,21 @@ ANHECOVA allows the relationship between baseline covariates and outcomes to dif
 
 The treatment-specific AIPW estimator considered in this project is:
 
-\[
+$$
 \hat\theta_a^{AIPW}
 =
 \bar Y_a
 -\frac{1}{n_a}\sum_{i:A_i=a}\hat\mu_a(X_i)
 +\frac{1}{n}\sum_{i=1}^{n}\hat\mu_a(X_i)
-\]
+$$
 
-where \(\hat\mu_a(X_i)\) is the working model prediction under treatment arm \(a\).
+where $\hat\mu_a(X_i)$ is the working model prediction under treatment arm $a$.
 
 For two treatment arms, the adjusted treatment effect is estimated as:
 
-\[
+$$
 \widehat{ATE}=\hat\theta_1^{AIPW}-\hat\theta_0^{AIPW}
-\]
+$$
 
 The estimator combines observed outcomes with model-based predictions to adjust for baseline covariate imbalances.
 
