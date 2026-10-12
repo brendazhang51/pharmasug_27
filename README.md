@@ -167,6 +167,14 @@ The following structure is planned and may evolve during development.
     └── methodology.md
 ```
 
+## Available Experimental Example
+
+[`examples/binomial_gcomp_mi.sas`](examples/binomial_gcomp_mi.sas) contains an
+author-supplied five-arm binomial-logit example with multiple imputation and
+Rubin-rule pooling. This extends beyond the initial scope below and does not
+implement joint calibration. It has not yet been run or numerically validated
+against RobinCar. See [example setup and input requirements](examples/README.md).
+
 ## Validation Strategy
 
 The SAS implementation will be validated against the R package RobinCar using identical datasets, model specifications, treatment definitions, and randomization settings.
