@@ -175,7 +175,8 @@ supplied preparation code using the uploaded
 Upload the CSV to an accessible directory on your SAS server. In
 [`sas/utilities.SAS`](sas/utilities.SAS), edit the `csv_path` argument in the
 `%car_config()` call to your full server file path (without quotation marks).
-Run `utilities.SAS` first, then `01_data_preparation.sas`, in the same SAS
+Run `utilities.SAS` first, then `01_data_preparation.sas`, then
+`02_outcome_models.sas`, in the same SAS
 session. Each colleague configures their own server path in `utilities.SAS`;
 the preparation program reads the shared macro variable `input_csv`.
 Repeat configuration when starting a new session. Import uses the uploaded
@@ -188,6 +189,17 @@ are retained by default, following the supplied code. Set `analysis_arms` to
 `0 1` only when using the matching two-arm R reference analysis. Randomization
 design remains `NOT_VERIFIED` until supported by source documentation.
 SAS execution and runtime validation remain pending.
+
+## Available Outcome Models
+
+[`sas/02_outcome_models.sas`](sas/02_outcome_models.sas) provides
+`%car_fit(data=work.analysis_data, method=ALL)` for ANOVA, ANCOVA, and ANHECOVA
+with categorical treatment and covariates `X1_ANALYSIS`, `X3_ANALYSIS`.
+It retains all selected arms and saves fitted values, residuals, parameters,
+diagnostics, and model item stores for later PROC PLM scoring. Final CAR
+inference is handled in later stages. See the
+[Program 02 summary and validation instructions](doc/program_02_summary.md).
+SAS/R runtime validation remains pending.
 
 ## Available Experimental Example
 
