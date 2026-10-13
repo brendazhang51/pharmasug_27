@@ -1,6 +1,6 @@
 # Program 02: Continuous-Outcome Working Models
 
-Run `utilities.SAS`, `01_data_preparation.sas`, and then
+Run `utilities/utilities.SAS`, `01_data_preparation.sas`, and then
 `02_outcome_models.sas` in the same SAS session. Program 02 requires SAS/STAT
 and uses the existing `WORK.ANALYSIS_DATA`; it does not read another CSV.
 

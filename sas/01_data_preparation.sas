@@ -19,15 +19,15 @@
 ==========================================================================*/
 
 /*----------------------- 0. User configuration --------------------------*/
-/* Run utilities.SAS in this SAS session first to configure INPUT_CSV.
-   Each colleague edits the %car_config call in utilities.SAS for their server. */
+/* Run utilities/utilities.SAS in this SAS session first to configure INPUT_CSV.
+   Each colleague edits the %car_config call in utilities/utilities.SAS for their server. */
 %macro require_config;
     %if not %symexist(input_csv) %then %do;
-        %put ERROR: Run utilities.SAS first to configure INPUT_CSV.;
+        %put ERROR: Run utilities/utilities.SAS first to configure INPUT_CSV.;
         %abort cancel;
     %end;
     %if %length(%superq(input_csv))=0 %then %do;
-        %put ERROR: INPUT_CSV is empty. Configure it in utilities.SAS.;
+        %put ERROR: INPUT_CSV is empty. Configure it in utilities/utilities.SAS.;
         %abort cancel;
     %end;
 %mend;
