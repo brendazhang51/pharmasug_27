@@ -3,7 +3,7 @@
 `sas/01_data_preparation.sas` imports, checks, standardizes, and summarizes the
 RobinCar example CSV for subsequent outcome modeling.
 
-Before running it, configure your SAS server CSV path in `sas/utilities.SAS`
+Before running it, configure your SAS server CSV path in `utilities/utilities.SAS`
 and submit that file in the same SAS session.
 
 The program:

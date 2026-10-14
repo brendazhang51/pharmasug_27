@@ -1,6 +1,10 @@
 # Base R only. Run from repository root:
 # Rscript validation/reference_outcome_models.R robincar_example_data.csv output_dir [0,1]
 # Omit the third argument to retain all source arms. Never interpret y0/y1/y2.
+script_argument <- grep("^--file=", commandArgs(), value = TRUE)
+script_directory <- dirname(normalizePath(sub("^--file=", "", script_argument[[1L]])))
+source(file.path(script_directory, "..", "utilities", "reference_helpers.R"))
+
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2L) stop("Supply input CSV and output directory; optional arms: 0,1")
 df <- read.csv(args[[1L]], check.names = FALSE)
@@ -34,13 +38,14 @@ for (method in names(formulas)) {
     SSE = sse, MSE = sse / df.residual(fit))
 }
 dir.create(args[[2L]], recursive = TRUE, showWarnings = FALSE)
-# Write numeric values with enough digits for 1e-8 comparison after CSV import.
-write_precise <- function(x, file) {
-  for (name in names(x)) if (is.numeric(x[[name]])) x[[name]] <- sprintf("%.17g", x[[name]])
-  write.table(x, file, sep = ",", row.names = FALSE, col.names = TRUE, quote = TRUE)
-}
-write_precise(do.call(rbind, fitted_rows), file.path(args[[2L]], "reference_fitted.csv"))
-write_precise(do.call(rbind, diagnostic_rows), file.path(args[[2L]], "reference_diagnostics.csv"))
+write_precise_reference(
+  do.call(rbind, fitted_rows),
+  file.path(args[[2L]], "reference_fitted.csv")
+)
+write_precise_reference(
+  do.call(rbind, diagnostic_rows),
+  file.path(args[[2L]], "reference_diagnostics.csv")
+)
 writeLines(c(R.version.string, paste("Input MD5:", tools::md5sum(args[[1L]])),
              paste("Rows:", nrow(df)), paste("Arms:", paste(levels(df$TRT), collapse = ","))),
            file.path(args[[2L]], "reference_provenance.txt"))

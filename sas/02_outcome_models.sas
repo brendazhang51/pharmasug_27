@@ -1,6 +1,6 @@
 /*==========================================================================
  Program 02: continuous-outcome working models (SAS/STAT required).
- Run utilities.SAS and Program 01 in this session first. All observed TRT
+ Run utilities/utilities.SAS and Program 01 in this session first. All observed TRT
  levels are categorical; only X1_ANALYSIS and X3_ANALYSIS are covariates.
  No CAR inference is performed. GLM's ordinary model-based SEs/p-values in
  MODEL_PARAMETERS are diagnostics, not final treatment-effect inference.

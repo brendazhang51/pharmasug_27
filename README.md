@@ -120,6 +120,12 @@ The project will implement the core functionality of the R package **RobinCar** 
 
 ### Program-to-Function Mapping
 
+Program summaries for 04–07 (inputs, methods, outputs and validation): [Program 04](doc/program_04_summary.md), [05](doc/program_05_summary.md),
+[06](doc/program_06_summary.md), and [07](doc/program_07_summary.md).
+Initial implementations of programs 04–07 are now available; SAS runtime and
+RobinCar numerical validation remain pending. See [loading instructions and
+input contracts](sas/README.md).
+
 | SAS Program | Proposed SAS Macro | RobinCar Function | Description |
 |---|---|---|---|
 | `01_data_preparation.sas` | `%car_prepare()` | Data preprocessing within `robincar_linear()` / `robincar_glm()` | Prepare analysis datasets, treatment indicators, baseline covariates, and randomization strata. |
@@ -144,28 +150,13 @@ The project will implement the core functionality of the R package **RobinCar** 
 | `PROC COMPARE` | Validate SAS outputs against reference results |
 
 
-## Proposed Repository Structure
+## Repository Structure
 
-The following structure is planned and may evolve during development.
-
-```text
-.
-├── README.md
-├── sas/
-│   ├── 01_data_preparation.sas
-│   ├── 02_outcome_models.sas
-│   ├── 03_aipw_estimation.sas
-│   ├── 04_joint_calibration.sas
-│   ├── 05_variance_estimation.sas
-│   └── 06_treatment_contrasts.sas
-├── examples/
-│   └── worked_example.sas
-├── validation/
-│   ├── robincar_reference.R
-│   └── compare_results.sas
-└── docs/
-    └── methodology.md
-```
+- `sas/`: analysis macros.
+- `doc/`: program summaries, following the Program 01 and 02 format.
+- `examples/`: runnable analysis examples; Program 03 remains planned.
+- `validation/`: R reference generators and SAS/R test entry points.
+- `utilities/`: SAS data-path configuration and shared R validation/export helpers.
 
 ## Available Data Preparation Program
 
@@ -173,11 +164,11 @@ The following structure is planned and may evolve during development.
 supplied preparation code using the uploaded
 [`robincar_example_data.csv`](robincar_example_data.csv) at the repository root.
 Upload the CSV to an accessible directory on your SAS server. In
-[`sas/utilities.SAS`](sas/utilities.SAS), edit the `csv_path` argument in the
+[`utilities/utilities.SAS`](utilities/utilities.SAS), edit the `csv_path` argument in the
 `%car_config()` call to your full server file path (without quotation marks).
-Run `utilities.SAS` first, then `01_data_preparation.sas`, then
+Run `utilities/utilities.SAS` first, then `01_data_preparation.sas`, then
 `02_outcome_models.sas`, in the same SAS
-session. Each colleague configures their own server path in `utilities.SAS`;
+session. Each colleague configures their own server path in `utilities/utilities.SAS`;
 the preparation program reads the shared macro variable `input_csv`.
 Repeat configuration when starting a new session. Import uses the uploaded
 server file directly, without a GitHub HTTP request.
@@ -200,6 +191,25 @@ diagnostics, and model item stores for later PROC PLM scoring. Final CAR
 inference is handled in later stages. See the
 [Program 02 summary and validation instructions](doc/program_02_summary.md).
 SAS/R runtime validation remains pending.
+
+## Available Calibration, Inference, and Validation Programs
+
+- [`sas/04_joint_calibration.sas`](sas/04_joint_calibration.sas): arm-specific
+  calibration using all arm predictions and optional joint-stratum adjustment.
+- [`sas/05_variance_estimation.sas`](sas/05_variance_estimation.sas): type-1
+  robust covariance under simple or stratified permuted-block randomization.
+- [`sas/06_treatment_contrasts.sas`](sas/06_treatment_contrasts.sas): linear
+  contrasts, covariance, normal confidence intervals and Wald tests.
+- [`sas/07_validation.sas`](sas/07_validation.sas): keyed numerical comparison
+  against reference tables using absolute and relative tolerances.
+
+Load [`sas/car_common.sas`](sas/car_common.sas) before these macro definitions.
+Programs 04–06 require SAS/IML. The [continuous bridge example](examples/continuous_04_07.sas)
+constructs ANCOVA predictions and AIPW inputs while general-purpose programs
+03 remains planned. An [inference validation driver](validation/test_inference.sas), a [synthetic smoke suite](validation/smoke_04_07.sas) and
+[RobinCar reference exporter](validation/robincar_reference.R) support validation.
+These SAS programs have not yet been executed; numerical equivalence has not
+been established. See [run instructions](sas/README.md).
 
 ## Available Experimental Example
 
