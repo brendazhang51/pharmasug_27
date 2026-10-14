@@ -2,6 +2,10 @@
    Tests expect the original 500-row, three-arm example in ANALYSIS_DATA.
    Optional: set reference_dir before submitting this file to a SAS-server
    directory containing R reference CSVs for the SAME selected population. */
+
+   %let reference_dir=/export/viya/homes/jz472@duke.edu;
+
+
 %macro p02_assert(condition,message);
     %if not (&condition) %then %do;
         %put ERROR: PROGRAM 02 TEST FAILED: &message;

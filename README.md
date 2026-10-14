@@ -36,7 +36,7 @@ Additional randomization schemes, such as Pocock–Simon minimization, may be co
 
 ### 2. Working Outcome Models
 
-For a two-arm randomized trial with continuous outcomes, the project will examine three linear working models.
+For a randomized trial with continuous outcomes, the project examines three linear working models. The current programs retain all selected treatment arms.
 
 **ANOVA — Unadjusted model**
 
@@ -192,6 +192,24 @@ inference is handled in later stages. See the
 [Program 02 summary and validation instructions](doc/program_02_summary.md).
 SAS/R runtime validation remains pending.
 
+## Available AIPW Point Estimates
+
+[`sas/03_aipw_estimation.sas`](sas/03_aipw_estimation.sas) scores every
+participant under every selected treatment arm using the Program 02 item
+stores. `%car_aipw(data=work.analysis_data,method=ALL)` creates
+`WORK.AIPW_PREDICTIONS` and `WORK.AIPW_MEANS`. The mean for each arm is its
+mean predicted outcome across all participants plus the mean observed
+residual in that arm. It supports all treatment arms present in the input
+and calculates point estimates only; CAR-aware variance and formal contrasts
+remain for later programs. Run Programs 01, 02, and 03 in the same SAS
+session. See the [Program 03 summary and validation instructions](doc/program_03_summary.md).
+SAS runtime validation remains pending.
+
+To save the available Program 02 comparison tables and Program 03 results as
+CSV files, submit [`sas/export_results.sas`](sas/export_results.sas) in the
+same SAS session. Edit its `export_dir` setting to an existing SAS-server
+directory. Missing tables are reported and skipped.
+
 ## Available Calibration, Inference, and Validation Programs
 
 - [`sas/04_joint_calibration.sas`](sas/04_joint_calibration.sas): arm-specific
@@ -238,7 +256,7 @@ The emphasis will be on **numerical reproducibility and implementation accuracy*
 
 The initial implementation is restricted to:
 
-- Two-arm parallel-group randomized trials
+- Two or more treatment arms for working-model fitting and AIPW point estimates; planned CAR inference initially focuses on two arms
 - Continuous outcomes
 - Linear working outcome models
 - Simple and stratified permuted block randomization
