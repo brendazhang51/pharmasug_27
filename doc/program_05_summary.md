@@ -4,7 +4,7 @@
 calibrated AIPW treatment means. It requires SAS/IML and supports only
 `variance_type=1`, with explicit `car_scheme=simple` or `permuted-block`.
 
-Load `sas/car_common.sas` before this file. The file defines its macro without
+Load `sas/00_car_common.sas` before this file. The file defines its macro without
 running an analysis. Outputs are temporary WORK datasets by default. Check
 `CAR_RC` before proceeding: 0 means success and 1 means failure. A failed call
 clears its specified public outputs after output names have been validated;
@@ -48,7 +48,8 @@ variances are not clipped or replaced with another estimator.
 
 `validation/smoke_04_07.sas` includes analytic covariance fixtures, unequal
 allocation, reordered inputs, centering errors and empty permuted-block cells.
-`validation/test_inference.sas` compares complete original and calibrated
+`validation/inference_suite.sas` compares complete original and calibrated
 covariance and inference against RobinCar 1.2.0. See
-[validation instructions](../validation/README.md). SAS runtime validation
-remains pending.
+[validation instructions](../validation/README.md) and
+[the verification record](validation_status.md) for completed checks and
+pending configurations.

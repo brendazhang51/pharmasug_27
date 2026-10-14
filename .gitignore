@@ -1,0 +1,11 @@
+# Personal paths and generated SAS submissions containing them.
+/utilities/config.local.json
+/run/run_*.sas
+# Generated references, results, build manifests and logs.
+/output/
+# Local caches and editor/OS artifacts.
+__pycache__/
+*.pyc
+.Rhistory
+.RData
+.DS_Store

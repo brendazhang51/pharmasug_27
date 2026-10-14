@@ -1,5 +1,5 @@
 # Base R only. Run from repository root:
-# Rscript validation/reference_outcome_models.R robincar_example_data.csv output_dir [0,1]
+# Rscript validation/reference_outcome_models.R data/robincar_example_data.csv output_dir [0,1]
 # Omit the third argument to retain all source arms. Never interpret y0/y1/y2.
 script_argument <- grep("^--file=", commandArgs(), value = TRUE)
 script_directory <- dirname(normalizePath(sub("^--file=", "", script_argument[[1L]])))

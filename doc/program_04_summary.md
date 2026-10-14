@@ -4,7 +4,7 @@
 arm-specific linear model using all arms' re-centered predictions, then
 re-centers the calibrated predictions and estimates treatment means.
 
-Load `sas/car_common.sas` before this file. The file defines its macro without
+Load `sas/00_car_common.sas` before this file. The file defines its macro without
 running an analysis. Outputs are temporary WORK datasets by default. Check
 `CAR_RC` before proceeding: 0 means success and 1 means failure. A failed call
 clears its specified public outputs after output names have been validated;
@@ -42,5 +42,6 @@ predictions and non-estimable predictions. The RobinCar reference calls
 rather than requiring identical coefficients for aliased designs.
 
 Use [the running guide](../sas/README.md) for the current example bridge;
-Program 03 remains unimplemented. SAS execution and full SAS/R agreement
-remain pending.
+Program 03 remains unimplemented. See
+[the verification record](validation_status.md) for passed fixtures, the
+validated ANCOVA/simple configuration and the pending generated-run rerun.

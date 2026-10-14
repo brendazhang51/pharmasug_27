@@ -1,4 +1,12 @@
-# Five-arm binomial example with multiple imputation
+# Examples
+
+`continuous_04_07.sas` defines `%car_worked_example`, the ANCOVA/AIPW bridge for
+Programs 04–07. It does not execute on loading. Use the generated
+`run/run_inference.sas` to configure, import, compute and compare in one submission.
+Program 03 remains unimplemented; the bridge does not replace Program 02 or a
+future general AIPW implementation. See [the quick start](../doc/quickstart.md).
+
+## Experimental five-arm binomial example with multiple imputation
 
 `binomial_gcomp_mi.sas` preserves the author-supplied SAS/IML example for a
 binomial-logit working model, re-centered treatment means, permuted-block
@@ -9,7 +17,7 @@ This is an experimental extension beyond the main project's initial two-arm,
 continuous-outcome scope. It does not implement joint calibration. Its comments
 describe intended RobinCar correspondence, not verified numerical equivalence.
 
-## Run
+### Run
 
 1. Use a SAS environment with SAS/IML and SAS/STAT (PROC MIANALYZE).
 2. Load your completed, multiply imputed data into `WORK.COMPLETE` in the same
@@ -22,7 +30,7 @@ describe intended RobinCar correspondence, not verified numerical equivalence.
    does not generalize this example.
 4. Submit `binomial_gcomp_mi.sas` and inspect the SAS log before using outputs.
 
-## Input contract
+### Input contract
 
 One row per participant per imputation, with these variables:
 
@@ -41,7 +49,7 @@ The model also requires a full-rank design and a finite, converged logistic fit;
 separation and ill-conditioned fits need investigation in the SAS log.
 `_obsid` identifies the input row within an imputation, not a stable subject ID.
 
-## Outputs in WORK
+### Outputs in WORK
 
 - `fit_main`, `fit_contrast`: all imputations, identified by `_IMPUTATION_`.
 - `fit_main1` through `fit_main10`, and corresponding `fit_contrast` tables:
@@ -52,7 +60,7 @@ separation and ill-conditioned fits need investigation in the SAS log.
   estimates from PROC MIANALYZE. No pooled covariance matrix or joint test is
   produced. Re-running replaces these WORK tables.
 
-## Validation status
+### Validation status
 
 The program has not been executed in the development workspace because SAS is
 unavailable. Numerical agreement of predictions, means, covariance matrices,

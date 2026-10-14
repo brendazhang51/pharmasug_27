@@ -1,7 +1,7 @@
 # Program 07: Numerical Validation
 
 `sas/07_validation.sas` defines `%car_validate`, a reusable comparator for
-one numeric column in two keyed SAS datasets. Load `sas/car_common.sas` first.
+one numeric column in two keyed SAS datasets. Load `sas/00_car_common.sas` first.
 It does not import reference CSVs or run comparisons automatically.
 
 Supply `sas_data=`, `reference_data=`, `keys=`, and `value=`. Keys must be
@@ -28,7 +28,7 @@ names are rejected without deleting datasets.
 
 ## Validation
 
-`validation/test_inference.sas` defines `%car_test_inference`, which imports
+`validation/inference_suite.sas` defines `%car_test_inference`, which imports
 reference CSVs using explicit numeric types and character lengths, checks
 settings and population identity, and repeatedly invokes Program 07. It checks
 model, randomization design, arm order, variance type and confidence level
@@ -43,5 +43,6 @@ digits. Shared export helpers live in `utilities/reference_helpers.R`.
 
 Run [the independent validation entry point](../validation/README.md) after
 the analysis succeeds. Calculation success alone does not establish SAS/R
-agreement. Local R exporter checks have passed; Viya smoke tests and full
-SAS/R comparisons remain pending.
+agreement. Local R checks, Viya smoke tests and the ANCOVA/simple reference
+comparison have passed. See [the verification record](validation_status.md) for their scope
+and the pending rerun of generated submissions.

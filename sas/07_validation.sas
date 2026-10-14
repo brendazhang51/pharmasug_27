@@ -1,11 +1,33 @@
-/*
- * Compare ONE numeric column using complete unique keys and mixed tolerance.
- * Load car_common.sas first. No SAS/IML dependency for this macro.
- * Inputs must already describe identical populations/settings/arm ordering.
- * A absent R reference is NOT_RUN (CAR_RC=2); mismatches are FAIL (CAR_RC=1).
- * Initial implementation; SAS runtime validation pending.
- */
+/*==========================================================================
+ Program : 07_validation.sas
+ Project : Robust Covariate Adjustment under CAR (SAS / RobinCar)
+ Purpose : Compare one numeric result column using complete keys and mixed
+           tolerance.
+ Status  : See doc/validation_status.md for verified configurations.
 
+ INPUT  : SAS and reference datasets, unique key columns, numeric value
+          column and absolute/relative tolerances.
+ OUTPUT : Keyed comparison details, comparison summary and CAR_RC.
+
+ IMPORTANT:
+ - Load 00_car_common.sas first; this macro does not require SAS/IML.
+ - The caller must align population, settings and treatment-arm ordering.
+ - Use abs(SAS-reference) <= atol + rtol*abs(reference).
+ - CAR_RC: 0=pass, 1=failure, 2=reference unavailable (NOT_RUN).
+ - Loading defines the comparator without importing CSVs or running tests.
+==========================================================================*/
+
+/*==========================================================================
+ Macro   : car_validate
+ Purpose : Compare one numeric field with keyed mixed-tolerance checks.
+
+ INPUT  : SAS_DATA, REFERENCE_DATA, KEYS, VALUE; ATOL, RTOL and COMPARE.
+ OUTPUT : OUT comparison details, OUT_SUMMARY and CAR_RC.
+
+ IMPORTANT:
+ - Keys must be complete and unique; missing numeric values fail.
+ - Missing reference tables return NOT_RUN=2, not a successful comparison.
+==========================================================================*/
 %macro car_validate(
     sas_data       =,
     reference_data =,
@@ -23,7 +45,7 @@
     %local i ds_s ds_r vs vr rc bad n_failed n_rows;
     %if not %sysmacexist(car_require) %then %do;
         %let car_rc = 1;
-        %put ERROR: [CAR] Run car_common.sas first.;
+        %put ERROR: [CAR] Run 00_car_common.sas first.;
         %return;
     %end;
 
@@ -39,17 +61,17 @@
     %if &_car_error_rc %then %goto validation_fail;
 
     %if %length(%superq(reference_data)) = 0 %then %do;
-        %car_error(Specify a REFERENCE_DATA dataset name.);
+        %car_error(message=Specify a REFERENCE_DATA dataset name.);
         %goto validation_fail;
     %end;
 
     %if %length(%superq(keys)) = 0 or %car_nwords(%superq(value)) ne 1 %then %do;
-        %car_error(Specify KEYS and one numeric VALUE column.);
+        %car_error(message=Specify KEYS and one numeric VALUE column.);
         %goto validation_fail;
     %end;
 
     %if %sysfunc(findw(%upcase(&keys), %upcase(&value))) > 0 %then %do;
-        %car_error(VALUE cannot also be a key.);
+        %car_error(message=VALUE cannot also be a key.);
         %goto validation_fail;
     %end;
 
@@ -66,7 +88,7 @@
     %if &_car_error_rc %then %goto validation_fail;
 
     %if %upcase(&compare) ne YES and %upcase(&compare) ne NO %then %do;
-        %car_error(COMPARE must be YES or NO.);
+        %car_error(message=COMPARE must be YES or NO.);
         %goto validation_fail;
     %end;
 
@@ -116,10 +138,10 @@
         %let vs = %sysfunc(varnum(&ds_s, %scan(&keys, &i)));
         %let vr = %sysfunc(varnum(&ds_r, %scan(&keys, &i)));
         %if %sysfunc(vartype(&ds_s, &vs)) ne %sysfunc(vartype(&ds_r, &vr)) %then
-            %car_error(Key types disagree for %scan(&keys,&i).);
+            %car_error(message=Key types disagree for %scan(&keys,&i).);
         %else %if %sysfunc(vartype(&ds_s, &vs)) = C %then %do;
             %if %sysfunc(varlen(&ds_s, &vs)) ne %sysfunc(varlen(&ds_r, &vr)) %then
-                %car_error(Character key lengths must match for %scan(&keys,&i).);
+                %car_error(message=Character key lengths must match for %scan(&keys,&i).);
         %end;
     %end;
 
@@ -222,7 +244,7 @@
 
     %end;
     %if &n_rows = 0 or &n_failed > 0 %then %do;
-        %car_error(Validation failed: &n_failed differences across &n_rows keys.);
+        %car_error(message=Validation failed: &n_failed differences across &n_rows keys.);
     %end;
     %else %do;
         %let car_rc = 0;

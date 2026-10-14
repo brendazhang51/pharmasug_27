@@ -1,44 +1,13 @@
-# Programs 04–07
+# Analysis Programs and Macros
 
-These are initial implementations, with SAS execution and numerical equivalence
-to RobinCar still pending. Programs 04–06 require SAS/IML; the bridge example
-also requires SAS/STAT. Program 07 uses DATA steps and PROC SQL.
+Use [the quick start](../doc/quickstart.md) and generated files in `run/` for
+complete submissions. `sas/` is the implementation layer. Program 01 runs its
+data preparation on submission; Program 02 and 04–07 define macros without
+automatically running analyses. Load `00_car_common.sas` before calling 04–07.
 
-## Load and run in Viya
-
-Run the full files in this order in the **same SAS session**:
-
-1. `car_common.sas`
-2. `04_joint_calibration.sas`
-3. `05_variance_estimation.sas`
-4. `06_treatment_contrasts.sas`
-5. `07_validation.sas`
-
-These files define macros; loading them does not run an analysis. In VS Code,
-open and submit each file. Alternatively upload them to an accessible SAS
-server directory and use `%include` with that server's paths.
-No Codespaces or local-machine path is assumed to exist on Viya.
-
-To check the implementation, first load `validation/test_inference.sas` (it defines
-macros without running them), then submit `validation/smoke_04_07.sas`.
-It uses synthetic data with analytic reference values, plus deliberate invalid
-inputs. Require `CAR_TEST_FAILURES=0`; expected errors are labelled by the tests.
-This fixture does not establish RobinCar equivalence.
-
-For the project CSV, run `utilities/utilities.SAS`, then `01_data_preparation.sas`, then
-load `examples/continuous_04_07.sas` and invoke:
-
-```sas
-/* Use the actual, documented randomization design. */
-%car_worked_example(car_scheme=simple);
-```
-
-The example constructs an ANCOVA fit and AIPW tables to bridge the currently
-missing general-purpose 03 macro. Program 02 is now available; this bridge
-still fits its own ANCOVA for a self-contained test, without modifying 02. `simple` is an explicit demonstration
-setting unless independently verified for the dataset. To compare two arms,
-set `analysis_arms=0 1` in 01 and use the same subset in R; never just discard
-rows from a prediction matrix fitted on a different analysis population.
+Programs 04–06 require SAS/IML. Program 02 and the continuous example require
+SAS/STAT. Configuration comes from `utilities/config.local.json` through the
+entry-point builder; `%car_config` is available for manual SAS workflows.
 
 ## Input contracts
 
@@ -89,76 +58,15 @@ values are rejected. Success is published only after every output step passes.
 Output names must differ from input tables. `WORK._CAR_*` is reserved for
 temporary tables; calls are sequential and not re-entrant.
 
-## R reference and validation
+## References and verification
 
-With RobinCar **1.2.0** installed, generate independently fitted reference
-tables, explicitly selecting the same analysis model/design/arm order:
+`validation/inference_suite.sas` defines `%car_test_inference` and its typed
+CSV imports. It checks settings/population identity, raw and centered predictions,
+original/calibrated means, complete covariance, SEs, CIs, contrasts and p-values.
+The generated inference run computes the example before invoking this suite.
 
-```bash
-Rscript validation/robincar_reference.R robincar_example_data.csv /tmp/car_reference ANCOVA simple 0,1
-```
-
-The optional final argument is alpha (default `0.05`), e.g. append `0.10`
-for 90% intervals. Both stages' means and contrasts use the selected alpha.
-The script uses `sprintf("%.17g", ...)`, rejects nonfinite values, and exports
-`analysis.csv` and `settings.csv` alongside the numeric results.
-
-The script pins the package version, records any installed RemoteSha,
-session information and CSV hash. For a GitHub installation, pin a reviewed
-commit before installing; source links on `main` can change.
-The bridge example's calibration uses `add_x` empty, matching this reference.
-
-Upload **all** generated CSVs to one accessible Viya server directory. After
-running the continuous example successfully, load `validation/test_inference.sas`
-and invoke:
-
-```sas
-%car_test_inference(
-    reference_dir = YOUR_SERVER_REFERENCE_DIRECTORY,
-    out_summary   = work.car_validation_suite,
-    out_details   = work.car_validation_details
-);
-proc print data=work.car_validation_suite; run;
-```
-
-The suite uses explicit CSV schemas (`usubjid $12`, contrast IDs `$12`, strata
-`$40`) and rejects oversized prediction/population keys instead of truncating
-silently. It checks saved run settings (`WORK.CAR_RUN_SETTINGS`), package
-version, full population values, joint strata and arm mapping before comparing
-all raw/centered predictions, original/calibrated means, covariance, SE, CI,
-contrasts and contrast covariance. For manual macro workflows, supply the same
-settings schema and the dataset parameters listed in the suite's signature.
-The suite currently validates joint calibration with empty `add_x`, matching
-the exporter. Custom source-data/model matching remains the caller's responsibility
-when populating run settings; the bridge generates its settings automatically.
-
-`CAR_SUITE_RC` and final `CAR_RC` are 0 only when **all** checks pass, 1 on
-failure, and 2 when no reference directory/settings file is available. Missing
-individual files in an otherwise configured suite are failures. Per-check
-summaries and normalized row-level differences are retained across comparisons;
-a later successful comparison cannot erase an earlier failure.
-
-07 remains independently callable. The rule is
-`abs(SAS−R) <= atol + rtol*abs(R)`; both missing values fail.
-Default mixed tolerance is `atol=1e-8, rtol=1e-6`.
-Duplicate/missing keys, empty comparisons and key-set mismatches fail.
-`compare=YES` adds a PROC COMPARE report, but mixed-tolerance results are
-authoritative. A missing reference dataset gives `NOT_RUN`, never `PASS`.
-Input errors replace earlier reports with fresh failure reports.
-
-Local base-R checks:
-
-```bash
-Rscript validation/test_reference_export.R --helpers-only
-Rscript validation/reference_outcome_models.R robincar_example_data.csv /tmp/outcome_reference
-```
-
-The first command checks precision roundtrip, alpha parsing and rejected
-nonfinite/empty exports. With RobinCar 1.2.0 installed, also run
-`Rscript validation/test_reference_export.R` for the real exporter across all
-three working models, both designs, two/three arms, reversed order and custom alpha. The second checks the merged PR's independent working
-models; it does not establish 04–07 numerical equivalence. The full exporter
-requires RobinCar 1.2.0; the SAS suite requires execution on Viya with SAS/IML.
-Do not mark SAS runtime or RobinCar equivalence validated until those checks pass.
-
-See the program summaries in [doc/](../doc/) for methods and output contracts.
+See [validation implementations](../validation/README.md),
+[program summaries](../doc/README.md) and the
+[verification record](../doc/validation_status.md). Passing the earlier synthetic
+and three-arm ANCOVA/simple comparisons does not validate untested configurations
+or the newly assembled entry points before their Viya rerun.

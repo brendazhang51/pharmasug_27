@@ -1,8 +1,10 @@
 /* Run Program 01 and Program 02 in the same session before this file.
    Tests expect the original 500-row, three-arm example in ANALYSIS_DATA.
-   Optional: set reference_dir before submitting this file to a SAS-server
-   directory containing R reference CSVs for the SAME selected population. */
-%macro p02_assert(condition,message);
+   Optional: set reference_dir to a server directory containing R reference
+   CSVs from reference_outcome_models.R for the SAME selected population. */
+/* Keyword parameters keep comparison operators from becoming parameter names. */
+
+%macro p02_assert(condition=, message=);
     %if not (&condition) %then %do;
         %put ERROR: PROGRAM 02 TEST FAILED: &message;
         %abort cancel;
@@ -10,7 +12,10 @@
 %mend;
 
 %car_fit();
-%p02_assert(&car_fit_rc eq 0,Three-arm fit succeeds);
+%p02_assert(
+    condition=&car_fit_rc=0,
+    message=Three-arm fit succeeds
+);
 proc sql noprint;
     select count(*),count(distinct model),max(abs(aval-predicted-residual))
       into :p02_n,:p02_models,:p02_identity from work.model_fitted;
@@ -21,9 +26,18 @@ proc sql noprint;
         (select trt,mean(aval) as arm_mean from work.analysis_data group by trt) as b
       on a.trt=b.trt where a.model='ANOVA';
 quit;
-%p02_assert(&p02_n eq 1500 and &p02_models eq 3 and &p02_bad eq 0,Population and ranks);
-%p02_assert(%sysevalf(&p02_identity<1e-8),Observed outcome identity);
-%p02_assert(%sysevalf(&p02_anova<1e-8),ANOVA reproduces arm means);
+%p02_assert(
+    condition=&p02_n=1500 and &p02_models=3 and &p02_bad=0,
+    message=Population and ranks
+);
+%p02_assert(
+    condition=%sysevalf(&p02_identity<1e-8),
+    message=Observed outcome identity
+);
+%p02_assert(
+    condition=%sysevalf(&p02_anova<1e-8),
+    message=ANOVA reproduces arm means
+);
 
 /* Verify the exact item stores that Program 03 will use for scoring. */
 %macro p02_score_test;
@@ -40,44 +54,62 @@ quit;
               from work._p02_scored as s inner join work.model_fitted as f
               on s.usubjid=f.usubjid where f.model="&method";
         quit;
-        %p02_assert(&p02_matched eq 500 and &p02_bad eq 0,PLM reproduces GLM predictions);
+        %p02_assert(
+            condition=&p02_matched=500 and &p02_bad=0,
+            message=PLM reproduces GLM predictions
+        );
     %end;
 %mend;
 %p02_score_test;
 
 /* Optional independent R comparison: full joins detect missing/extra keys. */
 %macro p02_compare_r;
+    %local p02_bad import_bad p02_fitted_rows p02_diag_rows p02_diag_bad;
+    %let import_bad=0;
     proc datasets library=work nolist nowarn;
         delete p02_r_fitted_compare p02_r_diagnostics_compare p02_r_summary
                _p02_r_fitted _p02_r_diag _p02_compare_preview;
     quit;
     %if not %symexist(reference_dir) %then %return;
     %if %length(%superq(reference_dir))=0 %then %return;
-    %p02_assert(%sysfunc(fileexist(%superq(reference_dir)/reference_fitted.csv)) eq 1,R fitted CSV is accessible);
-    %p02_assert(%sysfunc(fileexist(%superq(reference_dir)/reference_diagnostics.csv)) eq 1,R diagnostics CSV is accessible);
-    /* R quotes all CSV fields, so PROC IMPORT guesses numeric columns as
-       character in some SAS environments. Declare their types explicitly. */
+    %p02_assert(
+        condition=%sysfunc(fileexist(%superq(reference_dir)/reference_fitted.csv)) eq 1,
+        message=R fitted CSV is accessible
+    );
+    %p02_assert(
+        condition=%sysfunc(fileexist(%superq(reference_dir)/reference_diagnostics.csv)) eq 1,
+        message=R diagnostics CSV is accessible
+    );
+    /* R quotes numeric fields to preserve 17-digit precision. Do not infer types. */
     data work._p02_r_fitted;
-        length model $12 usubjid $11;
-        infile "&reference_dir./reference_fitted.csv" dsd firstobs=2
-            truncover lrecl=32767;
-        input model :$12. usubjid :$11. trt :best32. aval :best32.
+        length model $8 usubjid $32 trt aval predicted residual 8;
+        infile "&reference_dir./reference_fitted.csv"
+            dsd dlm=',' firstobs=2 lrecl=32767 truncover;
+        input model :$8. usubjid :$32. trt :best32. aval :best32.
               predicted :best32. residual :best32.;
+        if _error_ then call symputx('import_bad',1,'L');
     run;
+    %p02_assert(
+        condition=&syserr=0 and &import_bad=0,
+        message=R fitted CSV imports successfully
+    );
     data work._p02_r_diag;
-        length model $12;
-        infile "&reference_dir./reference_diagnostics.csv" dsd firstobs=2
-            truncover lrecl=32767;
-        input model :$12. n :best32. expected_rank :best32.
-              model_rank :best32. error_df :best32. sse :best32. mse :best32.;
+        length model $8 n expected_rank model_rank error_df sse mse 8;
+        infile "&reference_dir./reference_diagnostics.csv"
+            dsd dlm=',' firstobs=2 lrecl=32767 truncover;
+        input model :$8. n :best32. expected_rank :best32. model_rank :best32.
+              error_df :best32. sse :best32. mse :best32.;
+        if _error_ then call symputx('import_bad',1,'L');
     run;
-    %p02_assert(%sysfunc(exist(work._p02_r_fitted)) eq 1,R fitted CSV was imported);
-    %p02_assert(%sysfunc(exist(work._p02_r_diag)) eq 1,R diagnostics CSV was imported);
+    %p02_assert(
+        condition=&syserr=0 and &import_bad=0,
+        message=R diagnostics CSV imports successfully
+    );
     /* Keep every matched or unmatched key so differences can be inspected. */
     proc sql noprint;
         create table work.p02_r_fitted_compare as
           select coalescec(s.model,r.model) as model length=12,
-                 coalescec(s.usubjid,r.usubjid) as usubjid length=11,
+                 coalescec(s.usubjid,r.usubjid) as usubjid length=32,
                  s.trt as sas_trt, r.trt as r_trt,
                  s.aval as sas_aval, r.aval as r_aval,
                  s.predicted as sas_predicted, r.predicted as r_predicted,
@@ -120,7 +152,10 @@ quit;
                  max(abs_residual_diff) as max_abs_residual_diff
           from work.p02_r_fitted_compare group by model;
     quit;
-    %p02_assert(&sqlrc eq 0,R comparison tables were created);
+    %p02_assert(
+        condition=&sqlrc eq 0,
+        message=R comparison tables were created
+    );
 
     proc sort data=work.p02_r_fitted_compare;
         by model usubjid;
@@ -149,14 +184,24 @@ quit;
                abs_sse_diff abs_mse_diff e12.4;
     run;
     title;
+    %let p02_fitted_rows=0;
+    %let p02_diag_rows=0;
+    %let p02_bad=1;
+    %let p02_diag_bad=1;
     proc sql noprint;
         select count(*),sum(mismatch) into :p02_fitted_rows,:p02_bad
           from work.p02_r_fitted_compare;
         select count(*),sum(mismatch) into :p02_diag_rows,:p02_diag_bad
           from work.p02_r_diagnostics_compare;
     quit;
-    %p02_assert(&sqlrc eq 0,R comparison counts succeed);
-    %p02_assert(&p02_fitted_rows eq 1500 and &p02_diag_rows eq 3,R comparison row counts agree);
+    %p02_assert(
+        condition=&sqlrc eq 0,
+        message=R comparison counts succeed
+    );
+    %p02_assert(
+        condition=&p02_fitted_rows eq 1500 and &p02_diag_rows eq 3,
+        message=R comparison row counts agree
+    );
     %if &p02_bad>0 %then %do;
         title 'SAS versus R: first 20 fitted-value mismatches';
         proc sql outobs=20;
@@ -165,23 +210,42 @@ quit;
         quit;
         title;
     %end;
-    %p02_assert(&p02_bad eq 0,R input outcomes fitted values and residuals agree);
-    %p02_assert(&p02_diag_bad eq 0,R SSE MSE and degrees of freedom agree);
+    %p02_assert(
+        condition=&p02_bad eq 0,
+        message=R input outcomes fitted values and residuals agree
+    );
+    %p02_assert(
+        condition=&p02_diag_bad eq 0,
+        message=R SSE MSE and degrees of freedom agree
+    );
+    %put NOTE: Program 02 R reference comparison passed.;
     %put NOTE: SAS and R outcome-model comparisons passed. See WORK.P02_R_SUMMARY and WORK.P02_R_*_COMPARE.;
 %mend;
 %p02_compare_r;
 
 data work._p02_two; set work.analysis_data; where trt in (0,1); run;
 %car_fit(data=work._p02_two);
-%p02_assert(&car_fit_rc eq 0,Two-arm fit succeeds);
+%p02_assert(
+    condition=&car_fit_rc=0,
+    message=Two-arm fit succeeds
+);
 proc sql noprint;
     select count(*) into :p02_n from work.model_fitted;
 quit;
-%p02_assert(&p02_n eq 906,Two-arm population preserved);
+%p02_assert(
+    condition=&p02_n=906,
+    message=Two-arm population preserved
+);
 
 %car_fit(method=ANCOVA);
-%p02_assert(&car_fit_rc eq 0,Single-method API succeeds);
-%p02_assert(%sysfunc(exist(work.car_model_anova,ITEMSTOR)) eq 0,Previous item stores removed);
+%p02_assert(
+    condition=&car_fit_rc=0,
+    message=Single-method API succeeds
+);
+%p02_assert(
+    condition=%sysfunc(exist(work.car_model_anova,ITEMSTOR))=0,
+    message=Previous item stores removed
+);
 
 %macro p02_negative_tests;
     %local case;
@@ -210,18 +274,36 @@ quit;
             %end;
         run;
         %car_fit(data=work._p02_bad);
-        %p02_assert(&car_fit_rc eq 1,Invalid input is rejected);
-        %p02_assert(%sysfunc(exist(work.model_fitted)) eq 0,No stale or partial fitted output);
-        %p02_assert(%sysfunc(exist(work.car_model_anova,ITEMSTOR)) eq 0,No stale or partial store);
+        %p02_assert(
+            condition=&car_fit_rc=1,
+            message=Invalid input is rejected
+        );
+        %p02_assert(
+            condition=%sysfunc(exist(work.model_fitted))=0,
+            message=No stale or partial fitted output
+        );
+        %p02_assert(
+            condition=%sysfunc(exist(work.car_model_anova,ITEMSTOR))=0,
+            message=No stale or partial store
+        );
     %end;
 %mend;
 %p02_negative_tests;
 %car_fit(data=work._p02_missing);
-%p02_assert(&car_fit_rc eq 1,Absent dataset rejected);
+%p02_assert(
+    condition=&car_fit_rc=1,
+    message=Absent dataset rejected
+);
 %car_fit(method=INVALID);
-%p02_assert(&car_fit_rc eq 1,Invalid method rejected);
+%p02_assert(
+    condition=&car_fit_rc=1,
+    message=Invalid method rejected
+);
 
 /* Restore the default outputs for subsequent work. */
 %car_fit();
-%p02_assert(&car_fit_rc eq 0,Default results restored);
+%p02_assert(
+    condition=&car_fit_rc=0,
+    message=Default results restored
+);
 %put NOTE: Program 02 tests passed. R comparison runs only when REFERENCE_DIR is set.;

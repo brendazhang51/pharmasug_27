@@ -1,9 +1,9 @@
 /*
- * Load car_common.sas and 07, then run the continuous example successfully.
+ * Load 00_car_common.sas and 07, then run the continuous example successfully.
  * Load this file to define the suite; it does not run on submission.
  * Example: %car_test_inference(reference_dir=/your/server/reference);
  * References are from robincar_reference.R, with identical settings/population.
- * Initial implementation. Viya runtime validation remains pending.
+ * See doc/validation_status.md for verified configurations and pending runs.
  */
 
 /* Explicit schemas avoid PROC IMPORT inference and reject key truncation. */
@@ -14,7 +14,7 @@
 );
     %local bad value header;
     %if not %sysfunc(fileexist(%superq(file))) %then %do;
-        %car_error(Required reference file is absent: &file.);
+        %car_error(message=Required reference file is absent: &file.);
         %return;
     %end;
     %if &kind = analysis %then
@@ -31,7 +31,7 @@
     %else %if &kind = contrasts %then %let header=contrast_id,estimate,se,lcl,ucl,p_value;
     %else %if &kind = contrast_vcov %then %let header=contrast_i,contrast_j,covariance;
     %else %do;
-        %car_error(Unknown reference schema.);
+        %car_error(message=Unknown reference schema.);
         %return;
     %end;
     %let bad=1;
@@ -44,7 +44,7 @@
     %car_step(context=Reference header check);
     %if &_car_error_rc %then %return;
     %if &bad %then %do;
-        %car_error(Reference CSV header does not match its explicit schema.);
+        %car_error(message=Reference CSV header does not match its explicit schema.);
         %return;
     %end;
     data &out;
@@ -141,7 +141,7 @@
         context = Reference import checks,
         sql     = YES
     );
-    %if &bad > 0 %then %car_error(Reference CSV contains missing values or invalid keys.);
+    %if &bad > 0 %then %car_error(message=Reference CSV contains missing values or invalid keys.);
 %mend;
 
 %macro _car_suite_record(
@@ -337,7 +337,7 @@
     );
     %if &_car_error_rc %then %goto suite_fail;
     %if &rows ne 1 or &bad ne 1 %then %do;
-        %car_error(Exactly one SAS and R settings row is required.);
+        %car_error(message=Exactly one SAS and R settings row is required.);
         %goto suite_fail;
     %end;
     proc sql noprint;
@@ -359,7 +359,7 @@
     );
     %if &_car_error_rc %then %goto suite_fail;
     %if &bad > 0 %then %do;
-        %car_error(SAS and reference settings disagree.);
+        %car_error(message=SAS and reference settings disagree.);
         %goto suite_fail;
     %end;
     %_car_suite_record(
@@ -396,7 +396,7 @@
     );
     %if &_car_error_rc %then %goto suite_fail;
     %if &bad > 0 %then %do;
-        %car_error(Reference settings disagree with the SAS treatment order.);
+        %car_error(message=Reference settings disagree with the SAS treatment order.);
         %goto suite_fail;
     %end;
     %_car_suite_compare(
@@ -424,7 +424,7 @@
     );
     %if &_car_error_rc %then %goto suite_fail;
     %if &bad > 0 or &suite_failed %then %do;
-        %car_error(Population or arm mapping differs from the reference.);
+        %car_error(message=Population or arm mapping differs from the reference.);
         %goto suite_fail;
     %end;
     %_car_suite_record(

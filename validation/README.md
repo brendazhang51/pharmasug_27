@@ -1,73 +1,56 @@
-# Validation scripts
+# Validation Implementations
 
-`sas/` contains analysis macros. This folder contains reference generation,
-test fixtures and test drivers. Shared R helpers live in
-[`utilities/reference_helpers.R`](../utilities/reference_helpers.R). Program 07
-is the reusable numerical comparator called by the drivers; it is not a
-replacement for them.
+Use [run/](../run/README.md) for complete, generated SAS submissions.
+This directory contains the underlying tests, comparison suite and R exporters.
+Shared helpers live in [utilities/](../utilities/README.md).
 
-| Script | Purpose |
+| File | Purpose |
 |---|---|
-| `reference_outcome_models.R` | Independent base-R working-model fit reference from PR #6 |
-| `test_outcome_models.sas` | Program 02 tests, optionally compared with the base-R reference |
-| `robincar_reference.R` | Version-pinned RobinCar reference for original and calibrated inference |
-| `test_reference_export.R` | Base-R helper checks and real RobinCar integration checks across 15 scenarios |
-| `smoke_04_07.sas` | Analytic and negative-input tests for 04–07, without RobinCar |
-| `test_inference.sas` | Typed imports, settings/population checks, complete numerical comparison |
+| `reference_outcome_models.R` | Independent base-R working-model fit reference |
+| `robincar_reference.R` | RobinCar 1.2.0 original and calibrated inference reference |
+| `test_reference_export.R` | Base-R helper checks and 15 real RobinCar integration scenarios |
+| `test_outcome_models.sas` | Program 02 assertions and optional R comparison reports |
+| `smoke_04_07.sas` | Analytic and invalid-input fixtures for 04–07 |
+| `inference_suite.sas` | Defines typed imports, metadata/population checks and complete numerical comparisons |
+| `test_project.py` | Entry-point/configuration checks without SAS |
 
-## Local R checks
+## Local checks
 
 ```bash
+python -m unittest discover -s validation -p 'test_project.py'
 Rscript validation/test_reference_export.R --helpers-only
 Rscript validation/test_reference_export.R
 ```
 
-`--helpers-only` runs precision roundtrip and invalid-input checks with base R.
-The default command runs these checks plus the integration suite.
+The full R test requires RobinCar **1.2.0**; the helpers-only test uses base R.
+The integration scenarios cover three models, both supported designs, two/three
+arms, reversed arm order and 90% versus 95% intervals. They check the exporter,
+not SAS/R equivalence.
 
-The integration check requires RobinCar **1.2.0** and uses temporary output
-directories. It covers all three working models, both supported randomization
-settings, two/three arms, reversed arm order and 90% versus 95% intervals.
-It validates the exporter, not the numerical equivalence of SAS and R.
-
-To create a reference for the default three-arm ANCOVA example:
+Generate references using the shared config:
 
 ```bash
-Rscript validation/robincar_reference.R robincar_example_data.csv /tmp/car_reference ANCOVA simple 0,1,2 0.05
+python run/project.py reference outcome_models
+python run/project.py reference inference
 ```
 
-Use the same arm subset and design as the SAS run. The design remains a
-demonstration setting unless independently verified. Upload all 17 generated
-CSV files to an accessible SAS server directory. Regenerate old references:
-the updated schema includes population data, calibrated raw predictions and
-contrast confidence limits; old CSVs will be rejected by header checks.
+Outputs go to `output/outcome_models/` (two CSVs plus provenance) and
+`output/inference/` (17 CSVs plus session information). Upload all CSVs to the
+respective Viya directories from your local config. The server directories
+need not have the same names as the local output folders.
 
 ## Viya checks
 
-1. Load `sas/car_common.sas` and the macro definitions in 04–07.
-2. Load `validation/test_inference.sas`, which defines the suite without running it.
-3. Submit `validation/smoke_04_07.sas`; require `CAR_TEST_FAILURES=0`.
-4. Run utilities and Program 01 successfully, load the continuous example,
-   then invoke `%car_worked_example(car_scheme=simple, alpha=0.05)`.
-5. Invoke `%car_test_inference(reference_dir=YOUR_SERVER_REFERENCE_DIRECTORY)`.
+Build and submit the full `run/run_smoke.sas`, `run/run_outcome_models.sas`, or
+`run/run_inference.sas` as described in [the quick start](../doc/quickstart.md).
+The synthetic tests deliberately emit errors for invalid inputs; require all
+assertions to pass and `CAR_TEST_FAILURES=0`, with no unexpected SAS errors.
 
-Steps 3 and 4 are independent: the smoke tests use their own synthetic data.
-The smoke log deliberately contains errors for invalid inputs; every such call
-must satisfy its subsequent assertions. Unexpected errors must be investigated.
+For full inference, inspect `WORK.CAR_VALIDATION_SUITE`,
+`WORK.CAR_VALIDATION_DETAILS` and `CAR_SUITE_RC` (0 success, 1 failure, 2 missing
+reference). The suite checks model, design, variance type, arm order, alpha and
+population identity before numeric comparisons. A failure stays a failure even
+if later comparisons pass. Numeric defaults are `atol=1e-8`, `rtol=1e-6`.
 
-The full suite requires `WORK.CAR_RUN_SETTINGS`, generated by the example.
-For custom workflows, provide the datasets/settings via its keyword parameters;
-each dataset must describe one population, one model and one estimator.
-
-Review `WORK.CAR_VALIDATION_SUITE` and `WORK.CAR_VALIDATION_DETAILS`.
-`CAR_SUITE_RC=0` means all checks passed, 1 means failure, 2 means references
-were unavailable. A mismatch remains a failure even if later checks pass.
-Individual 07 calls also update `CAR_RC` and their fresh comparison reports.
-
-## Current verification status
-
-On 2026-10-13, base-R precision/input checks and all 15 real RobinCar 1.2.0
-reference scenarios passed in an isolated local R environment. SAS macro/block
-and label checks passed, and the core statistical equations were checked against
-the pre-change source. SAS execution on Viya, including the smoke tests and
-full SAS/R comparison, remains pending.
+See [the verification record](../doc/validation_status.md) for completed checks
+and outstanding Viya runs after the layout refactor.

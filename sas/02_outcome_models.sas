@@ -1,18 +1,34 @@
 /*==========================================================================
- Program 02: continuous-outcome working models (SAS/STAT required).
- Run utilities/utilities.SAS and Program 01 in this session first. All observed TRT
- levels are categorical; only X1_ANALYSIS and X3_ANALYSIS are covariates.
- No CAR inference is performed. GLM's ordinary model-based SEs/p-values in
- MODEL_PARAMETERS are diagnostics, not final treatment-effect inference.
+ Program : 02_outcome_models.sas
+ Project : Robust Covariate Adjustment under CAR (SAS / RobinCar)
+ Purpose : Fit continuous-outcome ANOVA, ANCOVA, and ANHECOVA working
+           models.
+ Status  : See doc/validation_status.md for verified configurations.
 
- API: %car_fit(data=work.analysis_data, method=ALL)
- METHOD: ALL, ANOVA, ANCOVA, ANHECOVA. CAR_FIT_RC: 0 success, 1 failure.
- A failed macro call returns without fitting further models and removes its
- public outputs. The default driver below cancels submission on failure.
- WORK.MODEL_* outputs, WORK.CAR_MODEL_* item stores and WORK._CF_* scratch
- names are reserved. Do not use these names as input.
+ INPUT  : Analysis data with USUBJID, TRT, AVAL, X1_ANALYSIS, X3_ANALYSIS.
+ OUTPUT : WORK.MODEL_PARAMETERS, WORK.MODEL_FITTED, WORK.MODEL_DIAGNOSTICS;
+          WORK.CAR_MODEL_ANOVA / ANCOVA / ANHECOVA item stores.
+
+ IMPORTANT:
+ - Requires SAS/STAT; configure paths and run Program 01 first.
+ - Loading this file defines macros without running an analysis.
+ - TRT is categorical; all selected arms use the same complete population.
+ - GLM coefficient SEs and p-values are model diagnostics, not CAR
+   inference.
+ - CAR_FIT_RC: 0=success, 1=failure. Failed calls remove public outputs.
+ - WORK.MODEL_*, WORK.CAR_MODEL_* and WORK._CF_* names are reserved.
 ==========================================================================*/
 
+/*==========================================================================
+ Macro   : _car_fit_clear
+ Purpose : Remove all public Program 02 datasets and model item stores.
+
+ INPUT  : Reserved WORK.MODEL_* and WORK.CAR_MODEL_* output names.
+ OUTPUT : Deletes public model datasets and all three model item stores.
+
+ IMPORTANT:
+ - Internal cleanup helper; leaves WORK._CF_* diagnostics available.
+==========================================================================*/
 %macro _car_fit_clear;
     proc datasets library=work nolist nowarn;
         delete model_parameters model_fitted model_diagnostics;
@@ -20,6 +36,18 @@
     quit;
 %mend;
 
+/*==========================================================================
+ Macro   : _car_fit_impl
+ Purpose : Validate the population and fit the requested working models.
+
+ INPUT  : DATA and METHOD: ALL, ANOVA, ANCOVA, or ANHECOVA.
+ OUTPUT : Model parameters, fitted values, diagnostics, item stores;
+          CAR_FIT_RC.
+
+ IMPORTANT:
+ - Internal implementation called by CAR_FIT; requires SAS/STAT.
+ - Sets CAR_FIT_RC=0 only after all requested fits and outputs succeed.
+==========================================================================*/
 %macro _car_fit_impl(data=, method=);
     %local dsid close_rc j name vnum schema_bad n nbad nunique k min_arm
            methods m current effects expected_rank fitted_n fitted_bad
@@ -166,6 +194,17 @@
     %let car_fit_rc=0;
 %mend;
 
+/*==========================================================================
+ Macro   : car_fit
+ Purpose : Fit working models and invalidate public outputs on failure.
+
+ INPUT  : DATA: complete analysis population; METHOD: requested model(s).
+ OUTPUT : WORK.MODEL_* datasets, WORK.CAR_MODEL_* stores; CAR_FIT_RC.
+
+ IMPORTANT:
+ - CAR_FIT_RC: 0=success, 1=failure; check it before using outputs.
+ - Every call clears prior model outputs, including unrequested methods.
+==========================================================================*/
 %macro car_fit(data=work.analysis_data, method=ALL);
     %global car_fit_rc;
     %let car_fit_rc=1;
@@ -177,7 +216,17 @@
     %end;
 %mend car_fit;
 
-/* Default driver. Later calls can request just one method. */
+/*==========================================================================
+ Macro   : _car_fit_driver
+ Purpose : Run the default model fit and display its diagnostics.
+
+ INPUT  : WORK.ANALYSIS_DATA and the default CAR_FIT settings.
+ OUTPUT : Default model outputs and printed WORK.MODEL_DIAGNOSTICS.
+
+ IMPORTANT:
+ - Optional manual driver; cancels submission if CAR_FIT fails.
+ - It is defined without automatic execution when this file is loaded.
+==========================================================================*/
 %macro _car_fit_driver;
     %car_fit();
     %if &car_fit_rc ne 0 %then %do;
@@ -186,4 +235,3 @@
     proc print data=work.model_diagnostics noobs; run;
     %put NOTE: Program 02 completed. Working models only. CAR inference is pending.;
 %mend;
-%_car_fit_driver;

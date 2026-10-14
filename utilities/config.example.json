@@ -1,0 +1,9 @@
+{
+  "input_csv": "data/robincar_example_data.csv",
+  "server_input_csv": "/your/viya/home/robincar_example_data.csv",
+  "server_outcome_reference_dir": "/your/viya/home/reference_output",
+  "server_inference_reference_dir": "/your/viya/home/car_reference",
+  "analysis_arms": [0, 1, 2],
+  "car_scheme": "simple",
+  "alpha": 0.05
+}

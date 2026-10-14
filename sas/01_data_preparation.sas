@@ -2,7 +2,7 @@
  Program : 01_data_preparation.sas
  Project : Robust Covariate Adjustment under CAR (SAS / RobinCar)
  Purpose : Import, validate, standardize, and summarize RobinCar example data.
- Status  : Initial implementation; requires execution/validation in SAS.
+ Status  : See doc/validation_status.md for verified configurations.
 
  INPUT  : CSV columns z1 z2 y0 y1 y2 A y strata_cross x1 x3
  OUTPUT : WORK.ANALYSIS_DATA, WORK.ALLOCATION_SUMMARY,
@@ -19,20 +19,32 @@
 ==========================================================================*/
 
 /*----------------------- 0. User configuration --------------------------*/
-/* Run utilities/utilities.SAS in this SAS session first to configure INPUT_CSV.
-   Each colleague edits the %car_config call in utilities/utilities.SAS for their server. */
+
+/*==========================================================================
+ Macro   : require_config
+ Purpose : Check that the server CSV path has been configured.
+
+ INPUT  : Global macro variable INPUT_CSV.
+ OUTPUT : No data output; cancels submission when configuration is absent.
+
+ IMPORTANT:
+ - Define and call CAR_CONFIG before running Program 01.
+==========================================================================*/
 %macro require_config;
     %if not %symexist(input_csv) %then %do;
-        %put ERROR: Run utilities/utilities.SAS first to configure INPUT_CSV.;
+        %put ERROR: Call CAR_CONFIG first to configure INPUT_CSV.;
         %abort cancel;
     %end;
     %if %length(%superq(input_csv))=0 %then %do;
-        %put ERROR: INPUT_CSV is empty. Configure it in utilities/utilities.SAS.;
+        %put ERROR: INPUT_CSV is empty. Configure it through CAR_CONFIG.;
         %abort cancel;
     %end;
 %mend;
 %require_config;
-%let analysis_arms = 0 1 2;
+/* A run entry point may select the population before submitting Program 01. */
+%if not %symexist(analysis_arms) %then %do;
+    %let analysis_arms = 0 1 2;
+%end;
 %let expected_arms = 0 1 2;
 %let required_cols = z1 z2 y0 y1 y2 A y strata_cross x1 x3;
 /* For documentation only; fill based on source trial/generation protocol. */
@@ -44,8 +56,17 @@ proc import datafile="&input_csv" out=work.robincar_raw
     guessingrows=max;
 run;
 
-/* Check metadata directly: FINDW with a blank delimiter inside %SYSFUNC
-   can trigger an empty %SYSEVALF expression on this SAS environment. */
+/*==========================================================================
+ Macro   : check_columns
+ Purpose : Verify all required source CSV columns after import.
+
+ INPUT  : WORK.ROBINCAR_RAW and the REQUIRED_COLS macro variable.
+ OUTPUT : No data output; cancels submission if the source/schema is
+          unavailable.
+
+ IMPORTANT:
+ - Read dataset metadata directly; avoid blank-delimiter FINDW in SYSFUNC.
+==========================================================================*/
 %macro check_columns;
     %local j col dsid close_rc missing_cols;
     %let dsid=%sysfunc(open(work.robincar_raw,i));
@@ -120,6 +141,17 @@ proc sql noprint;
     select count(*) into :n_errors trimmed
     from work.qc_issues where severity='ERROR';
 quit;
+
+/*==========================================================================
+ Macro   : stop_on_errors
+ Purpose : Stop data preparation when row-level QC errors are present.
+
+ INPUT  : N_ERRORS calculated from WORK.QC_ISSUES.
+ OUTPUT : No data output; cancels submission when N_ERRORS is positive.
+
+ IMPORTANT:
+ - Review WORK.QC_ISSUES before continuing with an invalid population.
+==========================================================================*/
 %macro stop_on_errors;
     %if &n_errors > 0 %then %do;
         %put ERROR: Found &n_errors data issues. Review WORK.QC_ISSUES.;
