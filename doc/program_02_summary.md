@@ -1,6 +1,6 @@
 # Program 02: Continuous-Outcome Working Models
 
-Use the generated `run/run_outcome_models.sas` from
+Use the generated `run/run.sas` from
 [the quick start](quickstart.md). It configures paths, imports the data through
 Program 01, defines Program 02 and runs its validation in one SAS submission.
 Program 02 requires SAS/STAT and uses `WORK.ANALYSIS_DATA` without reading
@@ -57,7 +57,7 @@ python run/project.py build outcome_models
 ```
 
 Upload the two CSVs from `output/outcome_models/` to the configured
-`server_outcome_reference_dir`, then submit `run/run_outcome_models.sas` in full.
+`server_outcome_reference_dir`, then submit `run/run.sas` in full.
 The automated fixture expects the original 500-row, three-arm CSV. It checks
 sample sizes, ANOVA means, decomposition, PLM scoring, two-arm fitting,
 single-method calls and invalid inputs, and restores default outputs afterward.
@@ -68,7 +68,7 @@ The comparison uses explicit CSV types, full joins and
 The reference generator records R version, input MD5, arms and sample size.
 The direct R script retains its optional arm-subset argument for manual checks.
 
-The earlier Program 02/base-R comparison passed in Viya; PR #7 report integration
-and the generated run file still need a Viya rerun. See
+The earlier Program 02/base-R comparison passed in SAS; PR #7 report integration
+and the generated run file still need a SAS rerun. See
 [the verification record](validation_status.md). This checks working-model fits,
 not RobinCar's later CAR variance.

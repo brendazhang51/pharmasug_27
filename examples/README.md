@@ -1,10 +1,12 @@
 # Examples
 
-`continuous_04_07.sas` defines `%car_worked_example`, the ANCOVA/AIPW bridge for
-Programs 04–07. It does not execute on loading. Use the generated
-`run/run_inference.sas` to configure, import, compute and compare in one submission.
-Program 03 remains unimplemented; the bridge does not replace Program 02 or a
-future general AIPW implementation. See [the quick start](../doc/quickstart.md).
+This directory contains independent experimental examples. These files are not
+included in the main `inference` workflow.
+
+The continuous-outcome Programs 01–07 pipeline lives in
+[`sas/inference_pipeline.sas`](../sas/inference_pipeline.sas). Build it with
+`python run/project.py build inference`, then submit the generated `run/run.sas`.
+See [the run guide](../run/README.md) for the execution order.
 
 ## Experimental five-arm binomial example with multiple imputation
 
@@ -13,8 +15,8 @@ binomial-logit working model, re-centered treatment means, permuted-block
 variance correction, active-minus-placebo risk differences, and separate
 Rubin-rule pooling of each mean and contrast using PROC MIANALYZE.
 
-This is an experimental extension beyond the main project's initial two-arm,
-continuous-outcome scope. It does not implement joint calibration. Its comments
+This is an experimental extension beyond the main continuous-outcome workflow
+(the current default example has three arms). It does not implement joint calibration. Its comments
 describe intended RobinCar correspondence, not verified numerical equivalence.
 
 ### Run

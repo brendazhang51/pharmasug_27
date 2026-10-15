@@ -13,7 +13,10 @@ Additional randomization schemes, such as Pocock–Simon minimization, may be co
 
 ### 2. Working Outcome Models
 
-For a two-arm randomized trial with continuous outcomes, the project uses three linear working models.
+The project implements three linear working models for continuous outcomes
+with categorical treatment. The equations below use binary treatment notation
+for illustration; the default example has three arms, fitted using treatment
+indicators and, for ANHECOVA, their covariate interactions.
 
 **ANOVA — Unadjusted model**
 
@@ -68,11 +71,20 @@ For two treatment arms, the adjusted treatment effect is estimated as:
 
 The estimator combines observed outcomes with model-based predictions to adjust for baseline covariate imbalances.
 
+The first prediction-average term is g-computation (standardization); the
+observed-arm residual mean is the augmentation. With the current in-sample OLS
+fits including treatment indicators, arm-specific residual means are zero up
+to numerical error, so the uncalibrated AIPW and g-computation point estimates
+coincide. Inference still uses the separately implemented CAR covariance.
+
 ### 4. Joint Calibration
 
 Joint calibration uses treatment-specific predictions and randomization strata to construct calibrated outcome predictions.
 
-Under the theoretical conditions established by Bannick et al., joint calibration provides a universally applicable asymptotic variance formulation and guarantees no loss of asymptotic efficiency relative to the unadjusted estimator.
+The cited paper motivates the asymptotic properties of joint calibration
+under its assumptions. Numerical agreement with RobinCar checks implementation
+agreement for the tested configurations; it does not establish a finite-sample
+efficiency guarantee for every dataset.
 
 The SAS implementation follows the calibration procedure described in the paper and compares the resulting estimates with RobinCar.
 
@@ -88,6 +100,14 @@ Outputs include:
 - Variance-covariance matrices
 - 95% confidence intervals
 - Wald-type hypothesis tests
+
+The main workflow supports type-1 variance under simple and stratified
+permuted-block designs. It uses marginal normal intervals, configurable alpha
+and linear contrasts; the pipeline selects ANOVA/ANCOVA/ANHECOVA through `analysis_model`, uses joint
+calibration and compares
+each nonreference arm with the lowest numeric arm. See the
+[support matrix](support_matrix.md) for data restrictions and unimplemented
+models, designs and inference methods.
 
 ## Reference implementation
 

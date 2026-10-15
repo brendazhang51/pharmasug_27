@@ -4,8 +4,10 @@ Load `utilities/utilities.SAS` and call `%car_config(csv_path=/your/server/data.
 with your server CSV path. Run `sas/01_data_preparation.sas`, load
 `sas/02_outcome_models.sas`, call `%car_fit()`, then submit
 `sas/03_aipw_estimation.sas`, all in one SAS session. Program 02 now only
-defines macros, so the explicit fit call is required. Program 03 is not yet
-included in the generated `run/project.py` entry points. Program 03 uses the
+defines macros, so the explicit fit call is required for manual submission.
+The generated `run/run.sas` now embeds the unchanged Program 03 after
+fitting ALL Program 02 methods, then passes the JSON-selected model outputs directly to 04–06 (default ANCOVA).
+Downstream macros consume its tables directly; see [the native data contracts](data_contracts.md). Program 03 uses the
 PROC GLM item stores saved by Program 02. Its default driver calls
 `%car_aipw(data=work.analysis_data,method=ALL)` and prints the arm means.
 After loading the file, the macro can also be called for just `ANOVA`,

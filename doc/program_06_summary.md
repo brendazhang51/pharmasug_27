@@ -10,10 +10,14 @@ clears its specified public outputs after output names have been validated;
 unsafe names cause failure without deleting datasets. Internal `_CAR_*` tables
 may remain for diagnosis.
 
-The coefficient dataset contains `CONTRAST_ID`, `LABEL`, `ARM_INDEX`,
+Supply native Program 03 (or calibrated Program 04) `means=` and select the
+same `model=` as the Program 05 covariance. Covariance keys are
+`MODEL TARGET_TRT_I TARGET_TRT_J`, with every ordered pair present.
+
+The coefficient dataset contains `CONTRAST_ID`, `LABEL`, `TARGET_TRT`,
 `COEFFICIENT`, and `NULL_VALUE`. Specify every arm once per contrast, including
 zero coefficients. For arm 1 minus arm 0, use coefficients -1 and 1 in the
-corresponding arm-map order. Labels and null values must be consistent within
+rows with actual treatment labels 0 and 1. Labels and null values must be consistent within
 a contrast.
 
 ```text
@@ -38,7 +42,7 @@ Negative variance or invalid covariance causes failure rather than adjustment.
 
 ## Validation
 
-`validation/smoke_04_07.sas` tests contrasts, off-diagonal covariance,
+`validation/test_inference_smoke.sas` tests contrasts, off-diagonal covariance,
 malformed matrices, coefficients and zero SE. The full reference suite compares
 against `robincar_contrast(..., contrast_h="diff")`, using explicit arm order
 and the same confidence level. See

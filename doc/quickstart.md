@@ -4,8 +4,7 @@
 
 - Python 3 for generating the SAS submission files; no extra Python packages
   are required.
-- VS Code with the SAS extension, connected to Viya using your own account and
-  connection profile. The SAS environment must provide SAS/STAT and SAS/IML.
+- Access to a SAS session with SAS/STAT and SAS/IML.
 - R with `Rscript` available in the terminal for reference generation. Program
   02 and 03 references use base R; the inference reference requires RobinCar 1.2.0.
   R and RobinCar are not needed for the synthetic smoke test.
@@ -19,7 +18,7 @@ cd pharmasug_27
 ```
 
 Each colleague uses their own local configuration. `utilities/config.local.json`,
-generated `run/run_*.sas` files and the entire `output/` directory are ignored
+generated `run/run.sas` files and the entire `output/` directory are ignored
 by Git: they do **not** arrive when you clone or pull the repository. Generate
 them locally using the commands below. You do not need to edit the analysis
 programs in `sas/` to change your server paths.
@@ -34,19 +33,20 @@ python run/project.py init
 
 Edit `utilities/config.local.json`. An existing file is kept unchanged by `init`.
 `input_csv` is the local R input, normally `data/robincar_example_data.csv`.
-The three `server_*` paths refer to files/directories on the Viya server,
+The four `server_*` paths refer to files/directories on the SAS server,
 not `/workspaces/...` paths. Your existing server CSV and uploaded reference
 directories can stay where they are; moving local output folders does not move
 server files.
 
-For the standard example, change only these three fields to directories/files
-accessible to your own Viya account:
+For the standard example, change these four fields to directories/files
+accessible to your own server account:
 
 | Configuration field | Your value |
 |---|---|
 | `server_input_csv` | Full server path to the uploaded original CSV, including its filename |
 | `server_outcome_reference_dir` | Server directory for the two Program 02 reference CSVs |
 | `server_inference_reference_dir` | Server directory for the 17 inference reference CSVs |
+| `server_export_dir` | Existing writable server directory for CSVs, HTML and PNGs |
 
 Keep the remaining fields at their validated example settings initially:
 
@@ -54,23 +54,27 @@ Keep the remaining fields at their validated example settings initially:
 {
   "input_csv": "data/robincar_example_data.csv",
   "analysis_arms": [0, 1, 2],
+  "analysis_model": "ANCOVA",
   "car_scheme": "simple",
   "alpha": 0.05
 }
 ```
 
-This fragment shows the unchanged fields only; keep all three `server_*` fields
+This fragment shows the unchanged fields only; keep all four `server_*` fields
 in your configuration too. Upload `data/robincar_example_data.csv` unchanged to
 the location specified by `server_input_csv` before running either data-based
-SAS entry point. Create the two server reference directories as needed; the
-local R commands cannot create directories on the remote Viya server.
+SAS entry point. Create the two server reference directories and the export directory as needed; the
+local R commands cannot create directories on the remote SAS server.
 
-`analysis_arms`, `car_scheme` and `alpha` are shared by the generated SAS run
-and R reference commands. The bridge uses ANCOVA, type-1 variance, joint
+`analysis_arms`, `analysis_model`, `car_scheme` and `alpha` are shared by the generated SAS run
+and R reference commands. The downstream inference uses the selected model (default ANCOVA), type-1 variance, joint
 calibration and no extra calibration covariates. Arm labels must be distinct
 integers in ascending order. The standard example uses `[0, 1, 2]`, `simple`
 and `0.05`; the design is an explicit algorithm demonstration setting unless
 verified from trial documentation.
+
+Every `build` command below writes **the same `run/run.sas` file**. Build a
+mode, submit it, then build the next mode. The file header shows its mode.
 
 ## 2. Run synthetic tests
 
@@ -78,10 +82,10 @@ verified from trial documentation.
 python run/project.py build smoke
 ```
 
-Open `run/run_smoke.sas`, select its entire contents and submit through the
-VS Code SAS extension. This entry point embeds all dependencies, uses its own
+Submit the entire `run/run.sas` file to the SAS session. This entry point embeds all dependencies, uses its own
 fixtures, and requires no data upload, local configuration or RobinCar.
-Require `CAR_TEST_FAILURES=0`. Errors deliberately emitted for invalid inputs
+The run includes 04–07 fixtures and native Program 03 input-contract
+checks. Require `CAR_TEST_FAILURES=0`. Errors deliberately emitted for invalid inputs
 must be followed by passing assertions; unexpected SAS errors require review.
 
 ## 3. Validate Program 02
@@ -93,7 +97,7 @@ python run/project.py build outcome_models
 
 Upload the two CSVs from `output/outcome_models/` to the configured
 `server_outcome_reference_dir`. Open and submit all of
-`run/run_outcome_models.sas`. It imports the server CSV, defines Program 02,
+`run/run.sas`. It imports the server CSV, defines Program 02,
 and runs its tests and R comparison. The automated fixture requires the original
 500-row CSV and all three arms. Require the R comparison success message,
 no failed assertions, and no unexpected SAS errors. Inspect `WORK.P02_R_SUMMARY`
@@ -112,7 +116,7 @@ Rscript validation/reference_aipw.R data/robincar_example_data.csv output/aipw
 ```
 
 Upload `reference_aipw_predictions.csv` and `reference_aipw_means.csv` from
-`output/aipw/` to an existing directory accessible to your Viya account.
+`output/aipw/` to an existing directory accessible to your server account.
 Retain `reference_aipw_provenance.txt` locally. The generated references are
 ignored by Git; you do not need a checked-in `reference_output/` directory.
 
@@ -154,16 +158,13 @@ SAS/R agreement.
 
 Inspect `WORK.P03_R_MEAN_COMPARE` for the nine SAS/R arm-mean comparisons.
 The test also checks a two-arm subset, then restores the full three-arm fits
-and AIPW outputs. Program 03 produces point estimates; the separate continuous
-inference example below still uses its own ANCOVA/AIPW bridge for Programs 04–07.
+and AIPW outputs. Program 03 produces point estimates; the generated inference
+run below uses its selected-model outputs directly in Programs 04–06.
 
-To export the available Program 02/03 results, edit `export_dir` in
-`sas/export_results.sas` to an existing writable Viya directory, then submit
-that file in the same session. It writes `sas_aipw_means.csv`,
-`sas_aipw_predictions.csv` and, when available, `p03_r_mean_compare.csv`, plus
-available Program 02 comparison tables. Missing tables are skipped. Files are
-written on the SAS server; download them separately if needed. See the
-[Program 03 summary](program_03_summary.md) for the estimator and output fields.
+The inference run below saves the full displayed output and compact final
+results automatically. Standalone Program 03 validation does not invoke the
+inference exporter. See [saving results](#save-result-tables-and-graphics) for
+what is retained and how the destination is configured.
 
 ## 5. Validate the continuous inference example
 
@@ -182,12 +183,21 @@ Rscript -e 'stopifnot(as.character(packageVersion("RobinCar")) == "1.2.0")'
 If this fails, install RobinCar 1.2.0 and its dependencies in that R environment
 before generating the reference. Upload all **17 CSVs** in `output/inference/` to
 `server_inference_reference_dir`; retain `sessionInfo.txt` with the local record.
-Open and submit all of `run/run_inference.sas`. It imports the data, loads
-all macros, runs the ANCOVA/AIPW bridge and compares the complete results.
-A server-side copy of the SAS sources is not needed.
+Open and submit all of `run/run.sas`. It imports the data, loads
+all macros, runs Programs 02 and 03, directly uses the selected model outputs and compares the
+complete original/calibrated inference. Program 03 is embedded unchanged: its
+automatic driver requires ALL working models, so Program 02 fits ALL first.
+Set `analysis_model` to `ANOVA`, `ANCOVA` or `ANHECOVA` for downstream inference
+and the matching reference comparison. Older JSON files without this field
+default to ANCOVA.
+A server-side copy of the SAS sources is not needed. See
+[the native data contracts](data_contracts.md) for input fields and checks.
 
 | Check | Expected result |
 |---|---|
+| Data preparation | `CAR_DATA_RC=0` |
+| Program 02 fitting | `CAR_FIT_RC=0` |
+| Program 03 computation | `CAR_AIPW_RC=0` |
 | Example computation | `EXAMPLE_RC=0` |
 | Complete reference comparison | `CAR_SUITE_RC=0` |
 | `WORK.CAR_VALIDATION_SUITE` | All checks PASS |
@@ -202,8 +212,8 @@ in `WORK.CAR_VALIDATION_DETAILS`.
 
 Save the SAS log and summary for each configuration, together with the reference
 settings, input hash and session information. `output/build/` records source
-hashes, bundle hashes and configuration for each generated entry point. Files
-are overwritten when rebuilding the same mode; copy completed runs into a dated
+hashes, bundle hashes and configuration for each generated entry point. The single `run/run.sas` is replaced by every build, and each mode's manifest
+is overwritten when rebuilding that mode; copy completed runs into a dated
 subdirectory under `output/` if they need to be retained. Results are local and
 ignored by Git.
 
@@ -221,3 +231,57 @@ R references.
 For another inference setting, change the shared config, regenerate the R
 reference, upload all CSVs, rebuild the inference run and submit it. Never compare
 new SAS results against an older reference with different settings.
+
+## Save result tables and graphics
+
+Set `server_export_dir` in `utilities/config.local.json` to an existing writable
+server directory, then run:
+
+```bash
+python run/project.py build inference
+```
+
+Submit the **entire** `run/run.sas` to the SAS server. This single submission performs
+analysis, validation and export. No separate submission of
+`sas/export_results.sas` is needed. Active export macros live in
+`sas/inference_pipeline.sas`; the builder embeds and calls them after the suite.
+The copy in `sas/deprecated/` is historical and is not a build dependency.
+
+Default CSV deliverables:
+
+| File | Contents |
+|---|---|
+| `car_mean_inference.csv` | Original means, SEs, confidence limits and tests |
+| `car_contrast_results.csv` | Original treatment differences and inference |
+| `car_cal_inference.csv` | Calibrated means and inference |
+| `car_cal_contrasts.csv` | Calibrated differences and inference |
+| `car_run_settings.csv` | Model, design and analysis settings |
+| `car_validation_suite.csv` | Final PASS/FAIL/NOT_RUN checks |
+| `allocation_summary.csv` | Treatment allocation within strata |
+| `baseline_summary.csv` | Baseline covariate summaries |
+
+`car_validation_details.csv` is additionally exported when `CAR_SUITE_RC=1`;
+`qc_issues.csv` is exported only when it contains findings. Intermediate
+predictions, fitted values, variance components and covariance CSVs are not
+exported by default. They remain available as WORK tables in the SAS session.
+
+`full_results.html` captures all displayed output from Program 01 through the
+suite, including MEANS/FREQ/GLM/PLM output and original procedure graphics.
+The export step appends four result plots (`original_means.png`,
+`original_contrasts.png`, `calibrated_means.png`, `calibrated_contrasts.png`),
+then reprints the validation summary so PASS/FAIL checks remain the last table.
+The procedure graphics use `analysis_plot*.png`. Download the HTML and all its
+PNGs together into the same folder. No duplicate `inference_report.html` is
+created. The report is not the SAS log; save the log separately.
+
+Files are written on the **SAS server**, not the local workspace. Existing
+names may be overwritten. Old extra files from earlier exports are not removed;
+use a fresh directory for each run to keep deliverables distinct. If execution
+aborts, outputs can be incomplete. Check `CAR_SUITE_RC`, the validation summary
+and the log; export completion alone does not establish validation success.
+
+Program 01 now invalidates previous WORK analysis outputs before importing a
+new source. Import/schema/QC failures cancel before fitting; QC failures also
+attempt to save `qc_issues.csv` and finalize the open HTML report. Earlier CSVs
+on disk are not removed. Check the current log and `CAR_DATA_RC`; old files in
+the directory do not establish that the current run succeeded.

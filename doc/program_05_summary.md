@@ -11,12 +11,17 @@ clears its specified public outputs after output names have been validated;
 unsafe names cause failure without deleting datasets. Internal `_CAR_*` tables
 may remain for diagnosis.
 
-Inputs are the analysis population, re-centered predictions (`MU_TILDE`),
-treatment estimates and the arm map. Every arm needs at least two rows.
-Predictions must be re-centered within observed arms, and estimates must
-agree with population prediction means. Permuted-block calculations require
-every arm-by-stratum cell to be populated. The design is supplied by the
-caller; it is not inferred from observed counts.
+Inputs are the analysis population and Program 03's predictions and means,
+with `model=ANCOVA` by default. Supply `means=`; no `arm_map=` is needed.
+The macro validates all source summaries, then re-centers raw `PREDICTED`
+internally using `MEAN_RESIDUAL_ARM`. Every arm needs at least two rows.
+Program 04's calibrated tables use the same schema and can be supplied directly.
+Permuted-block calculations require every arm-by-stratum cell to be populated.
+The caller supplies the design; it is not inferred from observed counts.
+
+Covariance keys are `MODEL TARGET_TRT_I TARGET_TRT_J`; mean inference uses
+`MODEL TARGET_TRT AIPW_MEAN` with SE/CI/test fields. See
+[the data contracts](data_contracts.md) for the complete schemas.
 
 Let Q[a,b] be Cov(Y, MU_TILDE_b | A=a), Sigma the population prediction
 sample covariance, and pi the empirical allocation proportions. The engine
@@ -46,9 +51,9 @@ variances are not clipped or replaced with another estimator.
 
 ## Validation
 
-`validation/smoke_04_07.sas` includes analytic covariance fixtures, unequal
+`validation/test_inference_smoke.sas` includes analytic covariance fixtures, unequal
 allocation, reordered inputs, centering errors and empty permuted-block cells.
-`validation/inference_suite.sas` compares complete original and calibrated
+`validation/test_inference_reference.sas` compares complete original and calibrated
 covariance and inference against RobinCar 1.2.0. See
 [validation instructions](../validation/README.md) and
 [the verification record](validation_status.md) for completed checks and

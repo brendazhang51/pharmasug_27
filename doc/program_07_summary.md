@@ -28,21 +28,22 @@ names are rejected without deleting datasets.
 
 ## Validation
 
-`validation/inference_suite.sas` defines `%car_test_inference`, which imports
+`validation/test_inference_reference.sas` defines `%car_test_inference`, which imports
 reference CSVs using explicit numeric types and character lengths, checks
 settings and population identity, and repeatedly invokes Program 07. It checks
 model, randomization design, arm order, variance type and confidence level
 before comparing predictions, means, covariance, SEs, limits, contrasts and
-p-values. Review `WORK.CAR_VALIDATION_SUITE`, `WORK.CAR_VALIDATION_DETAILS`
+p-values. Analysis inputs remain in the native Program 03/04 schemas; private
+reference projections preserve compatibility with the 17 existing R CSVs. Review `WORK.CAR_VALIDATION_SUITE`, `WORK.CAR_VALIDATION_DETAILS`
 and `CAR_SUITE_RC` (0/1/2 with the same meanings).
 
-`validation/robincar_reference.R` generates the reference using RobinCar
+`validation/reference_inference.R` generates the reference using RobinCar
 1.2.0. It records the input hash, analysis population, package provenance and
 session information, and writes finite numeric values with 17 significant
 digits. Shared export helpers live in `utilities/reference_helpers.R`.
 
-Run [the independent validation entry point](../validation/README.md) after
-the analysis succeeds. Calculation success alone does not establish SAS/R
-agreement. Local R checks, Viya smoke tests and the ANCOVA/simple reference
+The generated inference run invokes the suite automatically after analysis;
+manual callers can use the [validation instructions](../validation/README.md). Calculation success alone does not establish SAS/R
+agreement. Local R checks, SAS smoke tests and the ANCOVA/simple reference
 comparison have passed. See [the verification record](validation_status.md) for their scope
-and the pending rerun of generated submissions.
+including the successful integrated 2026-10-15 SAS run.
