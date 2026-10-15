@@ -12,8 +12,8 @@
 
  IMPORTANT:
  - Load this file before calling Programs 04-07.
- - Treatment labels are numeric; arm indices are consecutive integers 1...K.
- - Each call handles one population/model/estimator; filter stacked inputs.
+ - Treatment labels are numeric; indices 1...K are private matrix ordering.
+ - Each call selects one MODEL directly from native Program 03 tables.
  - WORK._CAR_* tables are reserved; macro calls are not re-entrant.
  - Validate all output names before clearing any public result tables.
  - CAR_RC: 0=success, 1=failure, 2=reference unavailable in Program 07.
@@ -96,7 +96,7 @@
    step.
 ==========================================================================*/
 %macro car_step(
-    context =,
+    context = ,
     sql     = NO
 );
     %if &syserr > 4 %then
@@ -119,8 +119,8 @@
  - Rejects expressions, special missing values, NaN and nonnumeric strings.
 ==========================================================================*/
 %macro car_number(
-    name       =,
-    value      =,
+    name       = ,
+    value      = ,
     lower      = .,
     upper      = .,
     lower_open = NO,
@@ -204,8 +204,8 @@
    passes.
 ==========================================================================*/
 %macro car_output_guard(
-    inputs   =,
-    outputs  =,
+    inputs   = ,
+    outputs  = ,
     expected =
 );
     %local i j candidate normalized other bad output_list defaultlib inputlib
@@ -355,8 +355,8 @@
  - For INFERENCE=YES, OK rows require z/p-value; ZERO_SE rows may omit them.
 ==========================================================================*/
 %macro car_result_values(
-    data      =,
-    values    =,
+    data      = ,
+    values    = ,
     inference = NO
 );
     %local bad;
@@ -393,9 +393,9 @@
    keys.
 ==========================================================================*/
 %macro car_require(
-    data      =,
-    vars      =,
-    numeric   =,
+    data      = ,
+    vars      = ,
+    numeric   = ,
     character =
 );
     %local dsid i name v rc;
@@ -453,7 +453,7 @@
  - Rejects missing key values and duplicate key combinations.
 ==========================================================================*/
 %macro car_unique(
-    data =,
+    data = ,
     keys =
 );
     %local bad duplicates i sqlkeys;
@@ -493,26 +493,104 @@
 %mend;
 
 /*==========================================================================
- Macro   : car_inputs
- Purpose : Validate and align analysis, treatment-arm and prediction data.
+ Macro   : car_model
+ Purpose : Validate the selected Program 03 model without macro expressions.
 
- INPUT  : DATA, PREDICTIONS, ARM_MAP; optional numeric ADD_X columns.
- OUTPUT : Ordered WORK._CAR_DATA, WORK._CAR_ARMS, WORK._CAR_GRID and
-          diagnostics.
+ INPUT  : MODEL (ANOVA, ANCOVA or ANHECOVA).
+ OUTPUT : Shared failure codes when the model name is invalid.
 
  IMPORTANT:
- - Requires the complete subject-by-arm prediction grid and empirical
-   PI_HAT.
- - Rejects inconsistent counts, missing values and invalid treatment
-   mappings.
+ - Each downstream call processes exactly one model from the source tables.
+==========================================================================*/
+%macro car_model(model=);
+    %if "%qupcase(%superq(model))" ne "ANOVA"
+        and "%qupcase(%superq(model))" ne "ANCOVA"
+        and "%qupcase(%superq(model))" ne "ANHECOVA" %then
+        %car_error(message=Select one MODEL: ANOVA / ANCOVA / ANHECOVA.);
+%mend;
+
+/*==========================================================================
+ Macro   : car_select_means
+ Purpose : Select and validate treatment means in the Program 03 schema.
+
+ INPUT  : MEANS and MODEL; source tables are never changed.
+ OUTPUT : WORK._CAR_MEANS, ordered by numeric TARGET_TRT.
+
+ IMPORTANT:
+ - Requires all Program 03 mean fields and a unique row per selected target.
+ - Prediction/population agreement is checked separately by CAR_INPUTS.
+==========================================================================*/
+%macro car_select_means(means=, model=);
+    %local bad rows total lower_n upper_n;
+    %car_model(model=%superq(model));
+    %if &_car_error_rc %then %return;
+    %car_require(
+        data      = &means,
+        vars      = model target_trt n_total n_arm observed_mean mean_pred_all
+            mean_pred_arm mean_residual_arm aipw_mean,
+        numeric   = target_trt n_total n_arm observed_mean mean_pred_all
+            mean_pred_arm mean_residual_arm aipw_mean,
+        character = model
+    );
+    %if &_car_error_rc %then %return;
+    proc sort data=&means(where=(upcase(model)="%upcase(&model)"))
+        out=work._car_means;
+        by target_trt;
+    run;
+    %car_step(context=Program 03 mean selection);
+    %if &_car_error_rc %then %return;
+    %car_unique(data=work._car_means, keys=target_trt);
+    %if &_car_error_rc %then %return;
+    data work._car_badmeans;
+        set work._car_means;
+        expected_mean=mean_pred_all+mean_residual_arm;
+        expected_residual=observed_mean-mean_pred_arm;
+        if nmiss(target_trt,n_total,n_arm,observed_mean,mean_pred_all,
+            mean_pred_arm,mean_residual_arm,aipw_mean,expected_mean,expected_residual)>0
+            or n_arm<2 or n_arm ne int(n_arm)
+            or n_total<=n_arm or n_total ne int(n_total)
+            or abs(aipw_mean-expected_mean)>1e-8+1e-8*abs(expected_mean)
+            or abs(mean_residual_arm-expected_residual)
+                >1e-8+1e-8*abs(expected_residual);
+    run;
+    %car_step(context=Program 03 mean identities);
+    %if &_car_error_rc %then %return;
+    proc sql noprint;
+        select count(*),coalesce(sum(n_arm),0),coalesce(min(n_total),0),
+            coalesce(max(n_total),0)
+        into :rows trimmed,:total trimmed,:lower_n trimmed,:upper_n trimmed
+        from work._car_means;
+        select count(*) into :bad trimmed from work._car_badmeans;
+    quit;
+    %car_step(context=Program 03 mean checks, sql=YES);
+    %if &_car_error_rc %then %return;
+    %if &rows<2 or &bad>0 or &lower_n ne &upper_n or &total ne &lower_n %then
+        %car_error(message=Selected Program 03 means are empty or invalid.);
+%mend;
+
+/*==========================================================================
+ Macro   : car_inputs
+ Purpose : Validate native Program 03 predictions and means for matrix work.
+
+ INPUT  : DATA, PREDICTIONS, MEANS, MODEL; optional numeric ADD_X columns.
+ OUTPUT : Private WORK._CAR_DATA, _CAR_ARMS, _CAR_GRID and _CAR_EST.
+
+ IMPORTANT:
+ - Public inputs use MODEL and TARGET_TRT, exactly as Program 03 produces.
+ - PREDICTED is raw. Re-centering uses the validated MEAN_RESIDUAL_ARM.
+ - Arm indices exist only inside matrix calculations; no arm map is required.
+ - Rejects incomplete grids and discrepancies in all supplied mean summaries.
 ==========================================================================*/
 %macro car_inputs(
-    data        =,
-    predictions =,
-    arm_map     =,
+    data        = ,
+    predictions = ,
+    means       = ,
+    model       = ANCOVA,
     add_x       =
 );
-    %local n k rows bad;
+    %local n k rows bad bad_pred;
+    %car_select_means(means=&means, model=%superq(model));
+    %if &_car_error_rc %then %return;
     %car_require(
         data      = &data,
         vars      = usubjid trt aval strata &add_x,
@@ -521,241 +599,131 @@
     );
     %car_require(
         data      = &predictions,
-        vars      = usubjid arm_index mu_tilde,
-        numeric   = arm_index mu_tilde,
-        character = usubjid
+        vars      = model usubjid observed_trt target_trt aval predicted observed_residual,
+        numeric   = observed_trt target_trt aval predicted observed_residual,
+        character = model usubjid
     );
-    %car_require(
-        data    = &arm_map,
-        vars    = arm_index trt n_arm pi_hat,
-        numeric = arm_index trt n_arm pi_hat
-    );
-    %if &_car_error_rc %then
-        %return;
-    %car_unique(
-        data = &data,
-        keys = usubjid
-    );
-    %car_unique(
-        data = &predictions,
-        keys = usubjid arm_index
-    );
-    %car_unique(
-        data = &arm_map,
-        keys = arm_index
-    );
-    %car_unique(
-        data = &arm_map,
-        keys = trt
-    );
-    %if &_car_error_rc %then
-        %return;
-
-    proc sort data = &data out = work._car_data;
+    %if &_car_error_rc %then %return;
+    %car_unique(data=&data, keys=usubjid);
+    %if &_car_error_rc %then %return;
+    proc sort data=&data out=work._car_data;
         by usubjid;
     run;
-    %car_step(context=Input validation);
+    %car_step(context=Analysis population ordering);
     %if &_car_error_rc %then %return;
-
-    proc sort data = &arm_map out = work._car_arms;
-        by arm_index;
+    data work._car_pred;
+        set &predictions;
+        where upcase(model)="%upcase(&model)";
     run;
-    %car_step(context=Input validation);
+    %car_step(context=Program 03 prediction selection);
+    %if &_car_error_rc %then %return;
+    %car_unique(data=work._car_pred, keys=usubjid target_trt);
     %if &_car_error_rc %then %return;
 
-    proc sql noprint;
-        select count(*) into :n trimmed
-        from work._car_data;
-        select count(*) into :k trimmed
-        from work._car_arms;
-        select count(*) into :rows trimmed
-        from &predictions;
-    quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    data work._car_bad_pred;
+        set work._car_pred;
+        bad=cmiss(model,usubjid)>0
+            or nmiss(observed_trt,target_trt,aval,predicted)>0;
+        if observed_trt=target_trt then do;
+            expected_residual=aval-predicted;
+            if nmiss(observed_residual,expected_residual)>0 then bad=1;
+            else if abs(observed_residual-expected_residual)
+                >1e-8+1e-8*abs(expected_residual) then bad=1;
+        end;
+        else if not missing(observed_residual) then bad=1;
+        if bad;
+    run;
+    %car_step(context=Program 03 prediction values);
     %if &_car_error_rc %then %return;
-
-    %if &n = 0 or &k < 2 %then %do;
-        %car_error(message=At least two arms and a nonempty analysis population are required.);
-        %return;
-    %end;
-
     data work._car_bad;
         set work._car_data;
-        if cmiss(of trt aval strata &add_x) > 0;
+        if cmiss(of trt aval strata &add_x)>0;
     run;
-    %car_step(context=Input validation);
+    %car_step(context=Analysis value checks);
     %if &_car_error_rc %then %return;
-
     proc sql noprint;
-        select count(*) into :bad trimmed
-        from work._car_bad;
+        select count(*) into :n trimmed from work._car_data;
+        select count(*) into :rows trimmed from work._car_pred;
+        select count(*) into :bad trimmed from work._car_bad;
+        select count(*) into :bad_pred trimmed from work._car_bad_pred;
     quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    %car_step(context=Population counts, sql=YES);
     %if &_car_error_rc %then %return;
-
-    %if &bad > 0 %then
-        %car_error(message=Analysis values or covariates are missing.);
-
-    data work._car_bad;
-        set work._car_arms;
-        if cmiss(of arm_index trt n_arm pi_hat) > 0
-            or arm_index ne _n_
-            or n_arm < 2
-            or n_arm ne int(n_arm)
-            or pi_hat <= 0
-            or pi_hat >= 1;
-    run;
-    %car_step(context=Input validation);
-    %if &_car_error_rc %then %return;
-
-    proc sql noprint;
-        select count(*) into :bad trimmed
-        from work._car_bad;
-    quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
-    %if &_car_error_rc %then %return;
-
-    %if &bad > 0 %then
-        %car_error(message=Invalid arm map: use consecutive indices and at least two observations per arm.);
-
-    proc sql noprint;
-        select count(*) into :bad trimmed
-        from work._car_data d
-        left join work._car_arms a
-        on d.trt = a.trt
-        where missing(a.arm_index);
-    quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
-    %if &_car_error_rc %then %return;
-
-    %if &bad > 0 %then
-        %car_error(message=Observed treatment is absent from the arm map.);
-
+    %if &n=0 or &bad>0 or &bad_pred>0 %then %do;
+        %car_error(message=Analysis or Program 03 prediction values are missing or invalid.);
+        %return;
+    %end;
     proc sql;
         create table work._car_counts as
-        select trt, count(*) as actual_n
-        from work._car_data
-        group by trt;
+        select trt, count(*) as n_arm from work._car_data group by trt order by trt;
     quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    %car_step(context=Empirical treatment counts, sql=YES);
     %if &_car_error_rc %then %return;
-
+    data work._car_arms;
+        set work._car_counts;
+        arm_index=_n_;
+        pi_hat=n_arm/&n;
+    run;
+    %car_step(context=Private matrix treatment ordering);
+    %if &_car_error_rc %then %return;
     proc sql noprint;
+        select count(*) into :k trimmed from work._car_arms;
         select count(*) into :bad trimmed
-        from work._car_arms a
-        left join work._car_counts c
-        on a.trt = c.trt
-        where missing(c.actual_n)
-            or a.n_arm ne c.actual_n
-            or abs(a.pi_hat - c.actual_n / &n) > 1e-10;
-        create table work._car_grid as
-        select d.usubjid, a.arm_index, p.mu_tilde
-        from work._car_data d
-        cross join work._car_arms a
-        left join &predictions p
-        on d.usubjid = p.usubjid and a.arm_index = p.arm_index
-        order by d.usubjid, a.arm_index;
+        from work._car_means m full join work._car_arms a on m.target_trt=a.trt
+        where missing(m.model) or missing(a.trt) or a.n_arm<2
+            or m.n_arm ne a.n_arm or m.n_total ne &n;
+        select count(*) into :bad_pred trimmed
+        from work._car_pred p left join work._car_data d on p.usubjid=d.usubjid
+        where missing(d.usubjid) or p.observed_trt ne d.trt
+            or nmiss(p.aval,d.aval)>0
+            or abs(p.aval-d.aval)>1e-8+1e-8*abs(d.aval);
     quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    %car_step(context=Program 03 population agreement, sql=YES);
     %if &_car_error_rc %then %return;
-
-    %if &bad > 0 %then
-        %car_error(message=Arm counts or empirical probabilities disagree with the analysis population.);
-
-    proc sql noprint;
-        select count(*) into :bad trimmed
-        from work._car_grid
-        where missing(mu_tilde);
-    quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
-    %if &_car_error_rc %then %return;
-
-    %if &bad > 0 or &rows ne %eval(&n * &k) %then
-        %car_error(message=Predictions must contain exactly one finite value per subject and prediction arm.);
-%mend;
-
-/*==========================================================================
- Macro   : car_estimates
- Purpose : Check supplied means against the re-centered prediction grid.
-
- INPUT  : ESTIMATES and previously validated WORK._CAR_GRID.
- OUTPUT : WORK._CAR_EXPECTED, WORK._CAR_ESTCHECK; shared failure codes.
-
- IMPORTANT:
- - Requires one mean per arm and agreement within 1e-8 + 1e-6*abs(expected).
-==========================================================================*/
-%macro car_estimates(estimates =);
-    %local bad;
-    %car_require(
-        data    = &estimates,
-        vars    = arm_index estimate,
-        numeric = arm_index estimate
-    );
-    %if &_car_error_rc %then
+    %if &k<2 or &bad>0 or &bad_pred>0 or &rows ne %eval(&n*&k) %then %do;
+        %car_error(message=Program 03 treatments or population disagree with DATA.);
         %return;
-    %car_unique(
-        data = &estimates,
-        keys = arm_index
-    );
-    %if &_car_error_rc %then
-        %return;
-
+    %end;
     proc sql;
-        create table work._car_expected as
-        select arm_index, mean(mu_tilde) as expected
-        from work._car_grid
-        group by arm_index;
-        create table work._car_estcheck as
-        select
-            a.arm_index as expected_arm,
-            e.arm_index as supplied_arm,
-            a.expected,
-            e.estimate
-        from work._car_expected a
-        full join &estimates e
-        on a.arm_index = e.arm_index;
+        create table work._car_stats as
+        select target_trt, count(*) as n_total,
+            sum(observed_trt=target_trt) as n_arm,
+            mean(predicted) as mean_pred_all,
+            mean(case when observed_trt=target_trt then aval else . end) as observed_mean,
+            mean(case when observed_trt=target_trt then predicted else . end) as mean_pred_arm,
+            mean(observed_residual) as mean_residual_arm
+        from work._car_pred group by target_trt;
     quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    %car_step(context=Program 03 prediction summaries, sql=YES);
     %if &_car_error_rc %then %return;
-
     proc sql noprint;
         select count(*) into :bad trimmed
-        from work._car_estcheck
-        where missing(expected_arm)
-            or missing(supplied_arm)
-            or missing(estimate)
-            or abs(expected - estimate) > 1e-8 + 1e-6 * abs(expected);
+        from work._car_means m full join work._car_stats s on m.target_trt=s.target_trt
+        where missing(m.model) or missing(s.target_trt)
+            or nmiss(s.mean_pred_all,s.observed_mean,s.mean_pred_arm,s.mean_residual_arm)>0
+            or m.n_total ne s.n_total or m.n_arm ne s.n_arm
+            or abs(m.mean_pred_all-s.mean_pred_all)>1e-8+1e-8*abs(s.mean_pred_all)
+            or abs(m.observed_mean-s.observed_mean)>1e-8+1e-8*abs(s.observed_mean)
+            or abs(m.mean_pred_arm-s.mean_pred_arm)>1e-8+1e-8*abs(s.mean_pred_arm)
+            or abs(m.mean_residual_arm-s.mean_residual_arm)
+                >1e-8+1e-8*abs(s.mean_residual_arm);
+        create table work._car_grid as
+        select d.usubjid,a.arm_index,p.predicted as mu_raw,
+            p.predicted+m.mean_residual_arm as mu_tilde
+        from work._car_data d cross join work._car_arms a
+        left join work._car_pred p on d.usubjid=p.usubjid and a.trt=p.target_trt
+        left join work._car_means m on a.trt=m.target_trt
+        order by d.usubjid,a.arm_index;
+        create table work._car_est as
+        select a.arm_index,a.trt,a.n_arm,m.aipw_mean as estimate
+        from work._car_arms a inner join work._car_means m on a.trt=m.target_trt
+        order by a.arm_index;
     quit;
-    %car_step(
-        context = Input validation,
-        sql     = YES
-    );
+    %car_step(context=Private matrix input alignment, sql=YES);
     %if &_car_error_rc %then %return;
-
-    %if &bad > 0 %then
-        %car_error(message=Point estimates do not match the supplied prediction matrix.);
+    %if &bad>0 %then %do;
+        %car_error(message=Program 03 means do not match the supplied predictions.);
+        %return;
+    %end;
+    %car_result_values(data=work._car_grid, values=arm_index mu_raw mu_tilde);
 %mend;

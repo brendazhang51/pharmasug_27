@@ -20,6 +20,77 @@
 
 /*----------------------- 0. User configuration --------------------------*/
 
+/* Invalidate reserved outputs before checking the new input, even when an old
+   run succeeded in this same SAS session. Preserve unrelated WORK datasets. */
+%macro _car_data_reset;
+    %global car_data_rc car_fit_rc car_aipw_rc car_rc car_suite_rc
+        _car_error_rc car_export_count car_export_plot_count;
+    %let car_data_rc=1;
+    %let car_fit_rc=1;
+    %let car_aipw_rc=1;
+    %let car_rc=1;
+    %let car_suite_rc=1;
+    %let _car_error_rc=1;
+    %let car_export_count=0;
+    %let car_export_plot_count=0;
+    proc datasets library=work nolist nowarn;
+        delete robincar_raw standardized_all analysis_data qc_issues
+            allocation_summary baseline_summary
+            model_parameters model_fitted model_diagnostics
+            aipw_predictions aipw_means
+            car_run_settings car_mean_vcov car_mean_inference
+            car_variance_components car_stratum_residuals
+            car_contrast_coefficients car_contrast_results car_contrast_vcov
+            car_cal_predictions car_cal_means car_cal_diagnostics
+            car_cal_vcov car_cal_inference car_cal_components
+            car_cal_stratum_residuals car_cal_contrasts car_cal_contrast_vcov
+            car_validation_suite car_validation_details
+            car_validation_results car_validation_summary
+            car_check_detail car_check_summary
+            p02_r_summary p02_r_diagnostics_compare p02_r_fitted_compare
+            p03_r_mean_compare;
+        delete car_model_anova car_model_ancova car_model_anhecova / memtype=itemstor;
+    quit;
+%mend;
+
+/* Preserve current QC findings before cancelling. Never invoke final inference
+   export here: those results are unavailable for a failed preparation. */
+%macro _car_data_abort(message=, save_qc=NO);
+    %global car_data_rc car_rc _car_error_rc;
+    %let car_data_rc=1;
+    %let car_rc=1;
+    %let _car_error_rc=1;
+    %put ERROR: [CAR DATA] &message;
+    %if &save_qc=YES and %sysfunc(exist(work.qc_issues)) %then %do;
+        proc print data=work.qc_issues noobs; run;
+        %if %symexist(car_export_dir) %then %do;
+            %if %length(%superq(car_export_dir))>0 %then %do;
+                proc export data=work.qc_issues
+                    outfile="&car_export_dir./qc_issues.csv" dbms=csv replace;
+                run;
+                %if &syserr>4 %then %do;
+                    %put WARNING: QC CSV could not be saved. WORK.QC_ISSUES remains available.;
+                %end;
+            %end;
+        %end;
+    %end;
+    %if %sysmacexist(car_report_finish) %then %car_report_finish;
+    %abort cancel;
+%mend;
+/* Check immediately after preparation steps; a later PROC can reset SYSERR. */
+%macro _car_data_step(context=, sql=NO);
+    %if &syserr>4 %then %do;
+        %_car_data_abort(message=&context failed with SYSERR=&syserr..);
+    %end;
+    %if &sql=YES %then %do;
+        %if &sqlrc ne 0 %then %do;
+            %_car_data_abort(message=&context failed with SQLRC=&sqlrc..);
+        %end;
+    %end;
+%mend;
+%_car_data_reset;
+%_car_data_step(context=Previous run output cleanup);
+
 /*==========================================================================
  Macro   : require_config
  Purpose : Check that the server CSV path has been configured.
@@ -32,12 +103,10 @@
 ==========================================================================*/
 %macro require_config;
     %if not %symexist(input_csv) %then %do;
-        %put ERROR: Call CAR_CONFIG first to configure INPUT_CSV.;
-        %abort cancel;
+        %_car_data_abort(message=Call CAR_CONFIG first to configure INPUT_CSV.);
     %end;
     %if %length(%superq(input_csv))=0 %then %do;
-        %put ERROR: INPUT_CSV is empty. Configure it through CAR_CONFIG.;
-        %abort cancel;
+        %_car_data_abort(message=INPUT_CSV is empty. Configure it through CAR_CONFIG.);
     %end;
 %mend;
 %require_config;
@@ -51,43 +120,96 @@
 %let car_scheme    = NOT_VERIFIED;
 
 /*----------------------- 1. Import source CSV ---------------------------*/
-proc import datafile="&input_csv" out=work.robincar_raw
-    dbms=csv replace;
-    guessingrows=max;
-run;
+/* Return status rather than cancelling inside the import helper, so failure
+   scenarios can be exercised by the standalone validation script. */
+%macro _car_import_source;
+    %global car_data_rc;
+    %local import_rc dsid close_rc n_raw;
+    %let car_data_rc=1;
+    proc datasets library=work nolist nowarn;
+        delete robincar_raw;
+    quit;
+    %if not %sysfunc(fileexist(%superq(input_csv))) %then %do;
+        %put ERROR: [CAR DATA] Input CSV does not exist or is inaccessible: %superq(input_csv).;
+        %return;
+    %end;
+    proc import datafile="&input_csv" out=work.robincar_raw
+        dbms=csv replace;
+        guessingrows=max;
+    run;
+    /* Capture SYSERR before any other DATA/PROC step can overwrite it. */
+    %let import_rc=&syserr;
+    %if &import_rc>4 or not %sysfunc(exist(work.robincar_raw)) %then %do;
+        %put ERROR: [CAR DATA] CSV import failed with SYSERR=&import_rc: %superq(input_csv).;
+        proc datasets library=work nolist nowarn;
+            delete robincar_raw;
+        quit;
+        %return;
+    %end;
+    %let dsid=%sysfunc(open(work.robincar_raw,i));
+    %if &dsid=0 %then %return;
+    %let n_raw=%sysfunc(attrn(&dsid,nlobs));
+    %let close_rc=%sysfunc(close(&dsid));
+    %if &n_raw=0 %then %do;
+        %put ERROR: [CAR DATA] Input CSV contains no observations.;
+        proc datasets library=work nolist nowarn;
+            delete robincar_raw;
+        quit;
+        %return;
+    %end;
+    %let car_data_rc=0;
+%mend;
+%_car_import_source;
+%if &car_data_rc ne 0 %then %do;
+    %_car_data_abort(message=Input import failed. No models or inference will run.);
+%end;
 
 /*==========================================================================
  Macro   : check_columns
  Purpose : Verify all required source CSV columns after import.
 
  INPUT  : WORK.ROBINCAR_RAW and the REQUIRED_COLS macro variable.
- OUTPUT : No data output; cancels submission if the source/schema is
-          unavailable.
+ OUTPUT : CAR_DATA_RC=0 when schema checks pass; 1 otherwise.
+          The automatic caller cancels on failure.
 
  IMPORTANT:
  - Read dataset metadata directly; avoid blank-delimiter FINDW in SYSFUNC.
 ==========================================================================*/
 %macro check_columns;
-    %local j col dsid close_rc missing_cols;
+    %global car_data_rc;
+    %local j col dsid close_rc missing_cols vnum expected_type;
+    %let car_data_rc=1;
     %let dsid=%sysfunc(open(work.robincar_raw,i));
     %if &dsid=0 %then %do;
         %put ERROR: Cannot open WORK.ROBINCAR_RAW. Check the import log.;
-        %abort cancel;
+        %return;
     %end;
     %let missing_cols=0;
     %do j=1 %to %sysfunc(countw(&required_cols));
         %let col=%scan(&required_cols,&j,%str( ));
-        %if %sysfunc(varnum(&dsid,&col))=0 %then %do;
+        %let vnum=%sysfunc(varnum(&dsid,&col));
+        %if &vnum=0 %then %do;
             %put ERROR: Required source column &col is missing.;
             %let missing_cols=1;
         %end;
+        /* y0/y1/y2 are traceability-only columns; do not constrain their type. */
+        %else %if &col ne y0 and &col ne y1 and &col ne y2 %then %do;
+            %let expected_type=N;
+            %if &col=strata_cross %then %let expected_type=C;
+            %if %sysfunc(vartype(&dsid,&vnum)) ne &expected_type %then %do;
+                %put ERROR: Source column &col must have type &expected_type..;
+                %let missing_cols=1;
+            %end;
+        %end;
     %end;
     %let close_rc=%sysfunc(close(&dsid));
-    %if &missing_cols %then %do;
-        %abort cancel;
-    %end;
+    %if &missing_cols %then %return;
+    %let car_data_rc=0;
 %mend;
 %check_columns;
+%if &car_data_rc ne 0 %then %do;
+    %_car_data_abort(message=Input schema validation failed.);
+%end;
 
 /*----------------------- 2. Standardize fields --------------------------*/
 data work.standardized_all;
@@ -102,6 +224,8 @@ data work.standardized_all;
     /* Keep all source columns, including y0/y1/y2, for traceability. */
     drop issue;
 run;
+
+%_car_data_step(context=Input standardization);
 
 /*----------------------- 3. Row-level data checks -----------------------*/
 data work.qc_issues;
@@ -136,11 +260,14 @@ data work.qc_issues;
     end;
 run;
 
+%_car_data_step(context=Row-level QC);
+
 /* USUBJID is row-generated; uniqueness is by construction. */
 proc sql noprint;
     select count(*) into :n_errors trimmed
     from work.qc_issues where severity='ERROR';
 quit;
+%_car_data_step(context=QC error count, sql=YES);
 
 /*==========================================================================
  Macro   : stop_on_errors
@@ -154,8 +281,7 @@ quit;
 ==========================================================================*/
 %macro stop_on_errors;
     %if &n_errors > 0 %then %do;
-        %put ERROR: Found &n_errors data issues. Review WORK.QC_ISSUES.;
-        %abort cancel;
+        %_car_data_abort(message=Found &n_errors data issues. Review WORK.QC_ISSUES., save_qc=YES);
     %end;
 %mend;
 %stop_on_errors;
@@ -169,10 +295,16 @@ data work.analysis_data;
          A y x1 x3 strata_cross y0 y1 y2;
 run;
 
+%_car_data_step(context=Analysis population creation);
+
 /* Ensure the requested treatment arms are represented. */
 proc sql noprint;
     select count(*) into :n_analysis trimmed from work.analysis_data;
 quit;
+%_car_data_step(context=Analysis population count, sql=YES);
+%if &n_analysis=0 %then %do;
+    %_car_data_abort(message=No observations remain for the requested analysis arms.);
+%end;
 %put NOTE: Analysis dataset contains &n_analysis observations.;
 
 /*----------------------- 5. Allocation balance --------------------------*/
@@ -190,6 +322,8 @@ proc sql;
     order by a.strata, a.trt;
 quit;
 
+%_car_data_step(context=Allocation summary, sql=YES);
+
 /*----------------------- 6. Baseline summaries --------------------------*/
 proc means data=work.analysis_data n mean std min max nway;
     class trt;
@@ -201,6 +335,8 @@ proc means data=work.analysis_data n mean std min max nway;
         min= min_x1 min_x3
         max= max_x1 max_x3;
 run;
+
+%_car_data_step(context=Baseline summary);
 
 /*----------------------- 7. Display QC outputs --------------------------*/
 title 'RobinCar example: treatment by randomization stratum';
@@ -218,4 +354,7 @@ title 'Data quality findings';
 proc print data=work.qc_issues noobs; run;
 title;
 
+%let car_data_rc=0;
+%let _car_error_rc=0;
+%put NOTE: CAR_DATA_RC=&car_data_rc;
 %put NOTE: Program 01 completed. CAR design metadata: &car_scheme.;

@@ -5,7 +5,7 @@
            predictions.
  Status  : See doc/validation_status.md for verified configurations.
 
- INPUT  : Analysis data, subject-by-arm MU_TILDE predictions, arm map;
+ INPUT  : Program 03 predictions and means, analysis data and MODEL;
           optional numeric calibration covariates.
  OUTPUT : Calibrated predictions, treatment means, rank/estimability
           diagnostics; CAR_RC.
@@ -22,8 +22,8 @@
  Macro   : car_calibrate
  Purpose : Fit calibration models and publish re-centered predictions.
 
- INPUT  : DATA, PREDICTIONS, ARM_MAP; JOINT, ADD_X and RANK_TOL.
- OUTPUT : OUT_PREDICTIONS, OUT_ESTIMATES, OUT_DIAGNOSTICS; CAR_RC.
+ INPUT  : DATA, PREDICTIONS, MEANS, MODEL; JOINT, ADD_X and RANK_TOL.
+ OUTPUT : OUT_PREDICTIONS, OUT_MEANS, OUT_DIAGNOSTICS; CAR_RC.
 
  IMPORTANT:
  - JOINT=YES includes stratum indicators; JOINT=NO omits them.
@@ -31,13 +31,14 @@
 ==========================================================================*/
 %macro car_calibrate(
     data            = work.analysis_data,
-    predictions     = work.car_aipw_predictions,
-    arm_map         = work.car_arm_map,
+    predictions     = work.aipw_predictions,
+    means           = work.aipw_means,
+    model           = ANCOVA,
     joint           = YES,
-    add_x           =,
+    add_x           = ,
     rank_tol        = 1e-10,
     out_predictions = work.car_cal_predictions,
-    out_estimates   = work.car_cal_estimates,
+    out_means       = work.car_cal_means,
     out_diagnostics = work.car_cal_diagnostics
 );
     %global car_rc _car_error_rc;
@@ -50,9 +51,9 @@
     %end;
 
     %local _car_outputs _car_iml_ok;
-    %let _car_outputs = &out_predictions &out_estimates &out_diagnostics;
+    %let _car_outputs = &out_predictions &out_means &out_diagnostics;
     %car_output_guard(
-        inputs   = &data &predictions &arm_map,
+        inputs   = &data &predictions &means,
         outputs  = &_car_outputs,
         expected = 3
     );
@@ -60,7 +61,8 @@
     %car_clear(outputs=&_car_outputs);
     %if &_car_error_rc %then %goto calibrate_fail;
 
-    %if %upcase(&joint) ne YES and %upcase(&joint) ne NO %then %do;
+    %if "%qupcase(%superq(joint))" ne "YES"
+        and "%qupcase(%superq(joint))" ne "NO" %then %do;
         %car_error(message=JOINT must be YES or NO.);
         %goto calibrate_fail;
     %end;
@@ -78,7 +80,8 @@
     %car_inputs(
         data        = &data,
         predictions = &predictions,
-        arm_map     = &arm_map,
+        means       = &means,
+        model       = %superq(model),
         add_x       = &add_x
     );
     %if &_car_error_rc %then
@@ -227,40 +230,54 @@
         %goto calibrate_fail;
     %end;
 
-    data &out_predictions;
-        merge work._car_grid(keep = usubjid) work._car_calnum;
+    /* Publish the same public prediction/mean schema as Program 03. */
+    data work._car_calvalues;
+        merge work._car_grid(keep=usubjid) work._car_calnum;
     run;
-    %car_step(context=Calibrate step);
+    %car_step(context=Calibrated subject alignment);
     %if &_car_error_rc %then %goto calibrate_fail;
-
-    data &out_estimates;
-        set work._car_calest;
-    run;
-    %car_step(context=Calibrate step);
+    proc sql;
+        create table &out_predictions as
+        select "%upcase(&model)" as model length=8, p.usubjid,
+            d.trt as observed_trt, a.trt as target_trt, d.aval,
+            p.mu_cal_raw as predicted,
+            case when d.trt=a.trt then d.aval-p.mu_cal_raw else . end
+                as observed_residual
+        from work._car_calvalues p inner join work._car_data d on p.usubjid=d.usubjid
+        inner join work._car_arms a on p.arm_index=a.arm_index
+        order by p.usubjid,a.trt;
+        create table &out_means as
+        select model,target_trt,count(*) as n_total,
+            sum(observed_trt=target_trt) as n_arm,
+            mean(case when observed_trt=target_trt then aval else . end) as observed_mean,
+            mean(predicted) as mean_pred_all,
+            mean(case when observed_trt=target_trt then predicted else . end) as mean_pred_arm,
+            mean(observed_residual) as mean_residual_arm,
+            calculated mean_pred_all+calculated mean_residual_arm as aipw_mean
+        from &out_predictions group by model,target_trt;
+        create table &out_diagnostics as
+        select "%upcase(&model)" as model length=8,a.trt as target_trt,
+            d.n_arm,d.n_columns,d.effective_rank,d.n_aliased,
+            d.estimability_error,d.recenter_delta,"%upcase(&joint)" as calibration length=5
+        from work._car_caldiag d inner join work._car_arms a on d.arm_index=a.arm_index
+        order by a.trt;
+    quit;
+    %car_step(context=Calibrated Program 03 schema publication, sql=YES);
     %if &_car_error_rc %then %goto calibrate_fail;
-
-    data &out_diagnostics;
-        set work._car_caldiag;
-        length calibration $5;
-        calibration = "%upcase(&joint)";
-    run;
-    %car_step(context=Calibrate step);
-    %if &_car_error_rc %then %goto calibrate_fail;
-
     %car_result_values(
         data   = &out_predictions,
-        values = arm_index mu_cal_raw mu_tilde
+        values = observed_trt target_trt aval predicted
     );
     %if &_car_error_rc %then %goto calibrate_fail;
     %car_result_values(
-        data   = &out_estimates,
-        values = arm_index trt n_arm estimate
+        data   = &out_means,
+        values = target_trt n_total n_arm observed_mean mean_pred_all
+            mean_pred_arm mean_residual_arm aipw_mean
     );
     %if &_car_error_rc %then %goto calibrate_fail;
     %car_result_values(
         data   = &out_diagnostics,
-        values = arm_index n_arm n_columns effective_rank n_aliased estimability_error
-            recenter_delta
+        values = target_trt n_arm n_columns effective_rank n_aliased estimability_error recenter_delta
     );
     %if &_car_error_rc %then %goto calibrate_fail;
     %put NOTE: [CAR] Calibration complete. Inspect &out_diagnostics for aliased columns.;

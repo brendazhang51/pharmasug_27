@@ -5,8 +5,8 @@
            designs.
  Status  : See doc/validation_status.md for verified configurations.
 
- INPUT  : Analysis data, arm-recentered MU_TILDE predictions, treatment
-          means, arm map and explicit randomization design.
+ INPUT  : Native Program 03 predictions and means, analysis data, MODEL
+          and explicit randomization design.
  OUTPUT : Mean covariance, SEs/CIs, variance components, stratum residuals;
           CAR_RC.
 
@@ -23,20 +23,20 @@
  Macro   : car_variance
  Purpose : Calculate CAR covariance and normal treatment-mean inference.
 
- INPUT  : DATA, PREDICTIONS, ESTIMATES, ARM_MAP; CAR_SCHEME, VARIANCE_TYPE,
+ INPUT  : DATA, PREDICTIONS, MEANS, MODEL; CAR_SCHEME, VARIANCE_TYPE,
           ALPHA.
  OUTPUT : OUT_VCOV, OUT_INFERENCE, OUT_COMPONENTS, OUT_RESIDUALS; CAR_RC.
 
  IMPORTANT:
- - MU_TILDE must be arm-recentered and agree with the supplied means.
+ - Raw PREDICTED is re-centered internally using MEAN_RESIDUAL_ARM.
  - PB requires populated arm-by-stratum cells; numerical failures return 1.
 ==========================================================================*/
 %macro car_variance(
     data           = work.analysis_data,
-    predictions    = work.car_aipw_predictions,
-    estimates      = work.car_arm_estimates,
-    arm_map        = work.car_arm_map,
-    car_scheme     =,
+    predictions    = work.aipw_predictions,
+    means          = work.aipw_means,
+    model          = ANCOVA,
+    car_scheme     = ,
     variance_type  = 1,
     alpha          = 0.05,
     out_vcov       = work.car_mean_vcov,
@@ -57,7 +57,7 @@
     %local _car_outputs _car_iml_ok;
     %let _car_outputs = &out_vcov &out_inference &out_components &out_residuals;
     %car_output_guard(
-        inputs   = &data &predictions &estimates &arm_map,
+        inputs   = &data &predictions &means,
         outputs  = &_car_outputs,
         expected = 4
     );
@@ -85,11 +85,9 @@
     %car_inputs(
         data        = &data,
         predictions = &predictions,
-        arm_map     = &arm_map
+        means       = &means,
+        model       = %superq(model)
     );
-    %if &_car_error_rc %then
-        %goto variance_fail;
-    %car_estimates(estimates = &estimates);
     %if &_car_error_rc %then
         %goto variance_fail;
     %let _car_iml_ok = 0;
@@ -263,15 +261,26 @@
         %goto variance_fail;
     %end;
 
-    data &out_vcov;
-        set work._car_varnum;
-    run;
-    %car_step(context=Variance step);
+    proc sql;
+        create table &out_vcov as
+        select "%upcase(&model)" as model length=8,
+            a.trt as target_trt_i,b.trt as target_trt_j,v.covariance
+        from work._car_varnum v inner join work._car_arms a on v.arm_i=a.arm_index
+        inner join work._car_arms b on v.arm_j=b.arm_index
+        order by a.trt,b.trt;
+        create table work._car_named_components as
+        select "%upcase(&model)" as model length=8,
+            a.trt as target_trt_i,b.trt as target_trt_j,v.v_sr,v.v_omega
+        from work._car_components v inner join work._car_arms a on v.arm_i=a.arm_index
+        inner join work._car_arms b on v.arm_j=b.arm_index
+        order by a.trt,b.trt;
+    quit;
+    %car_step(context=Variance publication, sql=YES);
     %if &_car_error_rc %then %goto variance_fail;
 
     data &out_components;
         if _n_ = 1 then set work._car_varcheck;
-        set work._car_components;
+        set work._car_named_components;
         length car_scheme $14;
         car_scheme = "&scheme";
     run;
@@ -279,13 +288,15 @@
     %if &_car_error_rc %then %goto variance_fail;
 
     data &out_inference;
-        set work._car_inference;
-        length status $16;
+        length model $8 status $16;
+        set work._car_inference(rename=(trt=target_trt estimate=aipw_mean));
+        model="%upcase(&model)";
+        drop arm_index;
         alpha = &alpha;
-        lcl = estimate - quantile('NORMAL', 1 - alpha / 2) * se;
-        ucl = estimate + quantile('NORMAL', 1 - alpha / 2) * se;
+        lcl = aipw_mean - quantile('NORMAL', 1 - alpha / 2) * se;
+        ucl = aipw_mean + quantile('NORMAL', 1 - alpha / 2) * se;
         if se > 0 then do;
-            z = estimate / se;
+            z = aipw_mean / se;
             p_value = 2 * cdf('NORMAL', -abs(z));
             status = 'OK';
         end;
@@ -296,10 +307,12 @@
 
     proc sql;
         create table &out_residuals as
-        select s.stratum_label as strata, r.arm_index, r.n_cell, r.residual_mean
+        select "%upcase(&model)" as model length=8,
+            s.stratum_label as strata,a.trt as target_trt,r.n_cell,r.residual_mean
         from work._car_srnum r
         left join work._car_strata s
         on r.stratum_index = s.stratum_index
+        inner join work._car_arms a on r.arm_index=a.arm_index
         order by r.stratum_index, r.arm_index;
     quit;
     %car_step(
@@ -310,17 +323,17 @@
 
     %car_result_values(
         data   = &out_vcov,
-        values = arm_i arm_j covariance
+        values = target_trt_i target_trt_j covariance
     );
     %if &_car_error_rc %then %goto variance_fail;
     %car_result_values(
         data   = &out_components,
-        values = arm_i arm_j v_sr v_omega minimum_eigenvalue covariance_tolerance minimum_diagonal
+        values = target_trt_i target_trt_j v_sr v_omega minimum_eigenvalue covariance_tolerance minimum_diagonal
     );
     %if &_car_error_rc %then %goto variance_fail;
     %car_result_values(
         data      = &out_inference,
-        values    = arm_index trt n_arm estimate se lcl ucl,
+        values    = target_trt n_arm aipw_mean se lcl ucl,
         inference = YES
     );
     %if &_car_error_rc %then %goto variance_fail;

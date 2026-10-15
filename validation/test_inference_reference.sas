@@ -1,15 +1,16 @@
 /*
- * Load 00_car_common.sas and 07, then run the continuous example successfully.
+ * Inference reference tests: settings, population and numeric comparisons.
+ * Load 00_car_common.sas and 07, then run continuous-outcome inference successfully.
  * Load this file to define the suite; it does not run on submission.
  * Example: %car_test_inference(reference_dir=/your/server/reference);
- * References are from robincar_reference.R, with identical settings/population.
+ * References are from reference_inference.R, with identical settings/population.
  * See doc/validation_status.md for verified configurations and pending runs.
  */
 
 /* Explicit schemas avoid PROC IMPORT inference and reject key truncation. */
 %macro _car_reference_import(
-    file =,
-    kind =,
+    file = ,
+    kind = ,
     out  =
 );
     %local bad value header;
@@ -145,8 +146,8 @@
 %mend;
 
 %macro _car_suite_record(
-    id      =,
-    status  =,
+    id      = ,
+    status  = ,
     details =
 );
     data work._car_suite_row;
@@ -162,10 +163,10 @@
 %mend;
 
 %macro _car_suite_compare(
-    sas_data       =,
-    reference_data =,
-    keys           =,
-    values         =,
+    sas_data       = ,
+    reference_data = ,
+    keys           = ,
+    values         = ,
     id             =
 );
     %local j field result key_index detail_dsid close_rc;
@@ -236,19 +237,17 @@
 %mend;
 
 %macro car_test_inference(
-    reference_dir            =,
+    reference_dir            = ,
     data                     = work.analysis_data,
     settings                 = work.car_run_settings,
-    arm_map                  = work.car_arm_map,
-    raw_predictions          = work.car_predictions,
-    original_predictions     = work.car_aipw_predictions,
-    original_estimates       = work.car_arm_estimates,
+    original_predictions     = work.aipw_predictions,
+    original_means           = work.aipw_means,
     original_vcov            = work.car_mean_vcov,
     original_inference       = work.car_mean_inference,
     original_contrasts       = work.car_contrast_results,
     original_contrast_vcov   = work.car_contrast_vcov,
     calibrated_predictions   = work.car_cal_predictions,
-    calibrated_estimates     = work.car_cal_estimates,
+    calibrated_means         = work.car_cal_means,
     calibrated_vcov          = work.car_cal_vcov,
     calibrated_inference     = work.car_cal_inference,
     calibrated_contrasts     = work.car_cal_contrasts,
@@ -259,15 +258,17 @@
     out_details              = work.car_validation_details
 );
     %global car_rc car_suite_rc _car_error_rc;
-    %local suite_failed bad rows value stage table kind actual_n arm_text;
+    %local suite_failed bad rows value stage table kind actual_n arm_text suite_model
+        arm_map raw_predictions original_estimates calibrated_estimates
+        original_means_input calibrated_means_input;
     %let car_rc = 1;
     %let _car_error_rc = 0;
     %let car_suite_rc = 1;
     %let suite_failed = 0;
     %car_output_guard(
-        inputs   = &data &settings &arm_map &raw_predictions &original_predictions
-            &original_estimates &original_vcov &original_inference &original_contrasts
-            &original_contrast_vcov &calibrated_predictions &calibrated_estimates &calibrated_vcov
+        inputs   = &data &settings &original_predictions
+            &original_means &original_vcov &original_inference &original_contrasts
+            &original_contrast_vcov &calibrated_predictions &calibrated_means &calibrated_vcov
             &calibrated_inference &calibrated_contrasts &calibrated_contrast_vcov,
         outputs  = &out_summary &out_details work.car_check_detail work.car_check_summary,
         expected = 4
@@ -378,12 +379,103 @@
         out  = work._car_ref_arm_map
     );
     %if &_car_error_rc %then %goto suite_fail;
-    %car_require(
-        data    = &arm_map,
-        vars    = arm_index trt n_arm pi_hat,
-        numeric = arm_index trt n_arm pi_hat
-    );
+    proc sql noprint;
+        select model into :suite_model trimmed from &settings;
+    quit;
+    %car_step(context=Reference model selection, sql=YES);
     %if &_car_error_rc %then %goto suite_fail;
+    /* RobinCar CSVs retain package arm indices. Only this comparison boundary
+       uses private projections; analysis stages consume native 03 tables. */
+    %let original_means_input=&original_means;
+    %let calibrated_means_input=&calibrated_means;
+    %do stage=1 %to 2;
+        %if &stage=1 %then %let table=original;
+        %else %let table=calibrated;
+        %car_inputs(
+            data        = &data,
+            predictions = &&&table._predictions,
+            means       = &&&table._means_input,
+            model       = &suite_model
+        );
+        %if &_car_error_rc %then %goto suite_fail;
+        data work._car_suite_&table._pred;
+            set work._car_grid;
+            mu_cal_raw=mu_raw;
+        run;
+        %car_step(context=Reference prediction projection);
+        %if &_car_error_rc %then %goto suite_fail;
+        data work._car_suite_&table._est;
+            set work._car_est;
+        run;
+        %car_step(context=Reference mean projection);
+        %if &_car_error_rc %then %goto suite_fail;
+        data work._car_suite_arms;
+            set work._car_arms;
+        run;
+        %car_step(context=Reference treatment projection);
+        %if &_car_error_rc %then %goto suite_fail;
+        %car_require(
+            data      = &&&table._vcov,
+            vars      = model target_trt_i target_trt_j covariance,
+            numeric   = target_trt_i target_trt_j covariance,
+            character = model
+        );
+        %car_require(
+            data      = &&&table._inference,
+            vars      = model target_trt aipw_mean se lcl ucl,
+            numeric   = target_trt aipw_mean se lcl ucl,
+            character = model
+        );
+        %if &_car_error_rc %then %goto suite_fail;
+        proc sql;
+            create table work._car_suite_&table._cov as
+            select a.arm_index as arm_i,b.arm_index as arm_j,v.covariance
+            from &&&table._vcov v
+            left join work._car_suite_arms a on v.target_trt_i=a.trt
+            left join work._car_suite_arms b on v.target_trt_j=b.trt
+            where upcase(v.model)="&suite_model";
+            create table work._car_suite_&table._inf as
+            select a.arm_index,v.aipw_mean as estimate,v.se,v.lcl,v.ucl
+            from &&&table._inference v
+            left join work._car_suite_arms a on v.target_trt=a.trt
+            where upcase(v.model)="&suite_model";
+        quit;
+        %car_step(context=Reference inference projection, sql=YES);
+        %if &_car_error_rc %then %goto suite_fail;
+        %car_require(
+            data      = &&&table._contrasts,
+            vars      = model contrast_id estimate se lcl ucl p_value,
+            numeric   = estimate se lcl ucl p_value,
+            character = model contrast_id
+        );
+        %car_require(
+            data      = &&&table._contrast_vcov,
+            vars      = model contrast_i contrast_j covariance,
+            numeric   = covariance,
+            character = model contrast_i contrast_j
+        );
+        %if &_car_error_rc %then %goto suite_fail;
+        data work._car_suite_&table._con;
+            set &&&table._contrasts;
+            where upcase(model)="&suite_model";
+        run;
+        %car_step(context=Reference contrast model selection);
+        %if &_car_error_rc %then %goto suite_fail;
+        data work._car_suite_&table._ccov;
+            set &&&table._contrast_vcov;
+            where upcase(model)="&suite_model";
+        run;
+        %car_step(context=Reference contrast covariance model selection);
+        %if &_car_error_rc %then %goto suite_fail;
+        %let &table._contrasts=work._car_suite_&table._con;
+        %let &table._contrast_vcov=work._car_suite_&table._ccov;
+        %let &table._predictions=work._car_suite_&table._pred;
+        %let &table._estimates=work._car_suite_&table._est;
+        %let &table._vcov=work._car_suite_&table._cov;
+        %let &table._inference=work._car_suite_&table._inf;
+    %end;
+    %let arm_map=work._car_suite_arms;
+    %let raw_predictions=&original_predictions;
     proc sql noprint;
         select strip(put(trt, best32.)) into :arm_text separated by ','
         from &arm_map order by arm_index;

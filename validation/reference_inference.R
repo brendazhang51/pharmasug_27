@@ -1,5 +1,5 @@
-# Generate reference CSVs for SAS 04-07. Requires RobinCar 1.2.0.
-# Usage: Rscript validation/robincar_reference.R input.csv output_dir
+# Generate original/calibrated inference reference CSVs. Requires RobinCar 1.2.0.
+# Usage: Rscript validation/reference_inference.R input.csv output_dir
 #        [ANOVA|ANCOVA|ANHECOVA] [simple|permuted-block] [0,1] [alpha]
 # Design is an explicit algorithm setting; do not infer it from these data.
 

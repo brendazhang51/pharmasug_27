@@ -22,15 +22,16 @@
  Macro   : car_contrast
  Purpose : Calculate linear contrasts and their full covariance matrix.
 
- INPUT  : ESTIMATES, VCOV, COEFFICIENTS and ALPHA.
+ INPUT  : Program 03 MEANS, MODEL, VCOV, COEFFICIENTS and ALPHA.
  OUTPUT : OUT and OUT_VCOV; CAR_RC.
 
  IMPORTANT:
- - Coefficient keys are CONTRAST_ID and ARM_INDEX; retain all arm rows.
+ - Coefficient keys are CONTRAST_ID and TARGET_TRT; retain all arm rows.
  - Zero SE is reported as ZERO_SE with missing z and p-value.
 ==========================================================================*/
 %macro car_contrast(
-    estimates    = work.car_arm_estimates,
+    means        = work.aipw_means,
+    model        = ANCOVA,
     vcov         = work.car_mean_vcov,
     coefficients = work.car_contrast_coefficients,
     alpha        = 0.05,
@@ -50,7 +51,7 @@
     %local _car_outputs _car_iml_ok;
     %let _car_outputs = &out &out_vcov;
     %car_output_guard(
-        inputs   = &estimates &vcov &coefficients,
+        inputs   = &means &vcov &coefficients,
         outputs  = &_car_outputs,
         expected = 2
     );
@@ -61,55 +62,50 @@
     %car_alpha(value=%superq(alpha));
     %if &_car_error_rc %then %goto contrast_fail;
 
+    %car_select_means(means=&means, model=%superq(model));
+    %if &_car_error_rc %then %goto contrast_fail;
     %car_require(
-        data    = &estimates,
-        vars    = arm_index estimate,
-        numeric = arm_index estimate
-    );
-    %car_require(
-        data    = &vcov,
-        vars    = arm_i arm_j covariance,
-        numeric = arm_i arm_j covariance
+        data      = &vcov,
+        vars      = model target_trt_i target_trt_j covariance,
+        numeric   = target_trt_i target_trt_j covariance,
+        character = model
     );
     %car_require(
         data      = &coefficients,
-        vars      = contrast_id label arm_index coefficient null_value,
-        numeric   = arm_index coefficient null_value,
+        vars      = contrast_id label target_trt coefficient null_value,
+        numeric   = target_trt coefficient null_value,
         character = contrast_id label
     );
-    %if &_car_error_rc %then
-        %goto contrast_fail;
-    %car_unique(
-        data = &estimates,
-        keys = arm_index
-    );
-    %car_unique(
-        data = &vcov,
-        keys = arm_i arm_j
-    );
-    %car_unique(
-        data = &coefficients,
-        keys = contrast_id arm_index
-    );
-    %if &_car_error_rc %then
-        %goto contrast_fail;
-
-    proc sort data = &estimates out = work._car_est;
-        by arm_index;
-    run;
-    %car_step(context=Contrast step);
     %if &_car_error_rc %then %goto contrast_fail;
-
-    proc sort data = &coefficients out = work._car_coef;
-        by contrast_id arm_index;
+    data work._car_est;
+        set work._car_means;
+        arm_index=_n_;
+        estimate=aipw_mean;
     run;
-    %car_step(context=Contrast step);
+    %car_step(context=Private contrast treatment ordering);
     %if &_car_error_rc %then %goto contrast_fail;
-
-    proc sort data = &vcov out = work._car_cov;
-        by arm_i arm_j;
+    data work._car_selected_cov;
+        set &vcov;
+        where upcase(model)="%upcase(&model)";
     run;
-    %car_step(context=Contrast step);
+    %car_step(context=Contrast covariance model selection);
+    %if &_car_error_rc %then %goto contrast_fail;
+    %car_unique(data=work._car_selected_cov, keys=target_trt_i target_trt_j);
+    %car_unique(data=&coefficients, keys=contrast_id target_trt);
+    %if &_car_error_rc %then %goto contrast_fail;
+    proc sql;
+        create table work._car_cov as
+        select a.arm_index as arm_i,b.arm_index as arm_j,v.covariance
+        from work._car_selected_cov v
+        left join work._car_est a on v.target_trt_i=a.target_trt
+        left join work._car_est b on v.target_trt_j=b.target_trt
+        order by arm_i,arm_j;
+        create table work._car_coef as
+        select c.*,a.arm_index from &coefficients c
+        left join work._car_est a on c.target_trt=a.target_trt
+        order by c.contrast_id,a.arm_index;
+    quit;
+    %car_step(context=Contrast target treatment alignment, sql=YES);
     %if &_car_error_rc %then %goto contrast_fail;
 
     proc sql noprint;
@@ -305,7 +301,8 @@
 
     data &out;
         merge work._car_labels work._car_cnum;
-        length status $16;
+        length model $8 status $16;
+        model="%upcase(&model)";
         alpha = &alpha;
         lcl = estimate - quantile('NORMAL', 1 - alpha / 2) * se;
         ucl = estimate + quantile('NORMAL', 1 - alpha / 2) * se;
@@ -320,6 +317,8 @@
     %if &_car_error_rc %then %goto contrast_fail;
 
     data &out_vcov;
+        length model $8;
+        model="%upcase(&model)";
         set work._car_cvcov;
     run;
     %car_step(context=Contrast step);

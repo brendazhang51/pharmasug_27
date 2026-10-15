@@ -45,10 +45,62 @@ if (!requireNamespace("RobinCar", quietly = TRUE) ||
 }
 
 root <- normalizePath(file.path(script_directory, ".."))
-script <- file.path(root, "validation", "robincar_reference.R")
+script <- file.path(root, "validation", "reference_inference.R")
 input <- file.path(root, "data", "robincar_example_data.csv")
 rscript <- file.path(R.home("bin"), "Rscript")
 source_data <- utils::read.csv(input)
+
+# Independent Program 03 references are cached by population, not by design.
+# Check downstream native-input centering against RobinCar without executing SAS.
+aipw_cache <- new.env(parent = emptyenv())
+base_aipw <- function(arms) {
+  if (!exists(arms, envir = aipw_cache, inherits = FALSE)) {
+    directory <- tempfile("base-aipw-")
+    log <- tempfile("base-aipw-log-")
+    result <- system2(
+      rscript,
+      vapply(c(file.path(root, "validation", "reference_aipw.R"),
+               input, directory, arms), shQuote, ""),
+      stdout = log,
+      stderr = log
+    )
+    if (result != 0L) stop(paste(readLines(log), collapse = "\n"))
+    assign(arms, list(
+      predictions = utils::read.csv(file.path(directory, "reference_aipw_predictions.csv")),
+      means = utils::read.csv(file.path(directory, "reference_aipw_means.csv"))
+    ), envir = aipw_cache)
+  }
+  get(arms, envir = aipw_cache, inherits = FALSE)
+}
+
+compare_aipw_mapping <- function(reference, model, mapping, read, n) {
+  p <- reference$predictions[reference$predictions$MODEL == model, ]
+  m <- reference$means[reference$means$MODEL == model, ]
+  arm <- match(as.character(p$TARGET_TRT), as.character(mapping$trt))
+  delta <- m$MEAN_RESIDUAL_ARM[match(p$TARGET_TRT, m$TARGET_TRT)]
+  mapped <- data.frame(
+    usubjid = p$USUBJID, arm_index = mapping$arm_index[arm],
+    mu_raw = p$PREDICTED, mu_tilde = p$PREDICTED + delta
+  )
+  check <- function(x, y, keys, value, expected_rows) {
+    both <- merge(x, y, by = keys, all = TRUE, suffixes = c("_base", "_robin"))
+    actual <- both[[paste0(value, "_base")]]
+    expected <- both[[paste0(value, "_robin")]]
+    stopifnot(
+      nrow(both) == expected_rows, all(is.finite(actual)), all(is.finite(expected)),
+      all(abs(actual - expected) <= 1e-8 + 1e-6 * abs(expected))
+    )
+  }
+  check(mapped[c("usubjid", "arm_index", "mu_raw")], read("original_raw_predictions"),
+        c("usubjid", "arm_index"), "mu_raw", n * nrow(mapping))
+  check(mapped[c("usubjid", "arm_index", "mu_tilde")], read("original_predictions"),
+        c("usubjid", "arm_index"), "mu_tilde", n * nrow(mapping))
+  means <- data.frame(
+    arm_index = mapping$arm_index[match(as.character(m$TARGET_TRT), as.character(mapping$trt))],
+    estimate = m$AIPW_MEAN
+  )
+  check(means, read("original_estimates"), "arm_index", "estimate", nrow(mapping))
+}
 
 run_case <- function(model, scheme, arms, alpha = .05) {
   directory <- tempfile("car-reference-")
@@ -73,6 +125,7 @@ run_case <- function(model, scheme, arms, alpha = .05) {
   analysis <- read("analysis")
   stopifnot(nrow(analysis) == n, !anyDuplicated(analysis$usubjid))
   stopifnot(identical(as.character(read("arm_map")$trt), selected))
+  compare_aipw_mapping(base_aipw(arms), model, read("arm_map"), read, n)
   for (stage in c("original", "calibrated")) {
     predictions <- read(paste0(stage, "_predictions"))
     means <- read(paste0(stage, "_estimates"))
@@ -116,3 +169,4 @@ stopifnot(
   all(narrow$ucl - narrow$lcl < wide$ucl - wide$lcl)
 )
 message("Real RobinCar reference integration checks passed")
+message("Independent base-R AIPW output mapping agrees with RobinCar in all scenarios")
