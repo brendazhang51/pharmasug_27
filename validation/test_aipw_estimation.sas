@@ -2,10 +2,10 @@
    Optional: set reference_dir to the SAS-server directory containing
    reference_aipw_predictions.csv and reference_aipw_means.csv. */
 
-%let reference_dir=/export/viya/homes/jz472@duke.edu;
+/* Set REFERENCE_DIR in the session to enable optional R comparison. */
 
 
-%macro p03_assert(condition,message);
+%macro p03_assert(condition=,message=);
     %if not (&condition) %then %do;
         %put ERROR: PROGRAM 03 TEST FAILED: &message;
         %abort cancel;
@@ -13,7 +13,7 @@
 %mend;
 
 %car_aipw();
-%p03_assert(&car_aipw_rc eq 0,Three-arm AIPW calculation succeeds);
+%p03_assert(condition=&car_aipw_rc eq 0,message=Three-arm AIPW calculation succeeds);
 proc sql noprint;
     select count(*),count(distinct model),
            coalesce(sum(missing(predicted)),0),
@@ -32,12 +32,12 @@ proc sql noprint;
       from work.aipw_means where model='ANOVA' and
            abs(aipw_mean-observed_mean)>1e-8;
 quit;
-%p03_assert(&sqlrc eq 0,Program 03 summary queries succeed);
-%p03_assert(&p03_predictions eq 4500 and &p03_models eq 3 and
-            &p03_missing eq 0 and &p03_residual_bad eq 0,
+%p03_assert(condition=&sqlrc eq 0,message=Program 03 summary queries succeed);
+%p03_assert(condition=&p03_predictions eq 4500 and &p03_models eq 3 and
+            &p03_missing eq 0 and &p03_residual_bad eq 0,message=
             Expected prediction population);
-%p03_assert(&p03_means eq 9 and &p03_bad eq 0 and
-            &p03_anova_bad eq 0,AIPW means and ANOVA identity);
+%p03_assert(condition=&p03_means eq 9 and &p03_bad eq 0 and
+            &p03_anova_bad eq 0,message=AIPW means and ANOVA identity);
 
 %macro p03_compare_r;
     proc datasets library=work nolist nowarn;
@@ -45,8 +45,8 @@ quit;
     quit;
     %if not %symexist(reference_dir) %then %return;
     %if %length(%superq(reference_dir))=0 %then %return;
-    %p03_assert(%sysfunc(fileexist(%superq(reference_dir)/reference_aipw_predictions.csv)) eq 1,R predictions CSV is accessible);
-    %p03_assert(%sysfunc(fileexist(%superq(reference_dir)/reference_aipw_means.csv)) eq 1,R means CSV is accessible);
+    %p03_assert(condition=%sysfunc(fileexist(%superq(reference_dir)/reference_aipw_predictions.csv)) eq 1,message=R predictions CSV is accessible);
+    %p03_assert(condition=%sysfunc(fileexist(%superq(reference_dir)/reference_aipw_means.csv)) eq 1,message=R means CSV is accessible);
     data work._p03_r_predictions;
         length model $12 usubjid $11;
         infile "&reference_dir./reference_aipw_predictions.csv"
@@ -68,8 +68,8 @@ quit;
         select count(*) into :p03_r_n from work._p03_r_predictions;
         select count(*) into :p03_r_means_n from work._p03_r_means;
     quit;
-    %p03_assert(&sqlrc eq 0,R reference counts succeed);
-    %p03_assert(&p03_r_n eq 4500 and &p03_r_means_n eq 9,R reference population);
+    %p03_assert(condition=&sqlrc eq 0,message=R reference counts succeed);
+    %p03_assert(condition=&p03_r_n eq 4500 and &p03_r_means_n eq 9,message=R reference population);
     proc sql noprint;
         select count(*) into :p03_bad
           from work.aipw_predictions as s full join work._p03_r_predictions as r
@@ -85,8 +85,8 @@ quit;
                   abs(s.observed_residual-r.observed_residual)>
                   1e-8+1e-8*abs(r.observed_residual)));
     quit;
-    %p03_assert(&sqlrc eq 0,R prediction comparison query succeeds);
-    %p03_assert(&p03_bad eq 0,R arm-specific predictions agree);
+    %p03_assert(condition=&sqlrc eq 0,message=R prediction comparison query succeeds);
+    %p03_assert(condition=&p03_bad eq 0,message=R arm-specific predictions agree);
     proc sql noprint;
         select count(*) into :p03_bad
           from work.aipw_means as s full join work._p03_r_means as r
@@ -108,8 +108,8 @@ quit;
                 abs(s.mean_residual_arm-r.mean_residual_arm)>
                     1e-8+1e-8*abs(r.mean_residual_arm);
     quit;
-    %p03_assert(&sqlrc eq 0,R means comparison query succeeds);
-    %p03_assert(&p03_bad eq 0,R AIPW means agree);
+    %p03_assert(condition=&sqlrc eq 0,message=R means comparison query succeeds);
+    %p03_assert(condition=&p03_bad eq 0,message=R AIPW means agree);
     proc sql;
         create table work.p03_r_mean_compare as
           select s.model,s.target_trt,s.n_arm,
@@ -120,7 +120,7 @@ quit;
           on s.model=r.model and s.target_trt=r.target_trt
           order by s.model,s.target_trt;
     quit;
-    %p03_assert(&sqlrc eq 0,R display table was created);
+    %p03_assert(condition=&sqlrc eq 0,message=R display table was created);
     title 'Program 03: SAS versus R AIPW arm means';
     proc print data=work.p03_r_mean_compare noobs;
         format sas_aipw_mean r_aipw_mean 16.10 absolute_difference e12.4;
@@ -136,19 +136,19 @@ data work._p03_two;
     where trt in (0,1);
 run;
 %car_fit(data=work._p03_two);
-%p03_assert(&car_fit_rc eq 0,Two-arm working models succeed);
+%p03_assert(condition=&car_fit_rc eq 0,message=Two-arm working models succeed);
 %car_aipw(data=work._p03_two);
-%p03_assert(&car_aipw_rc eq 0,Two-arm AIPW calculation succeeds);
+%p03_assert(condition=&car_aipw_rc eq 0,message=Two-arm AIPW calculation succeeds);
 proc sql noprint;
     select count(*) into :p03_predictions from work.aipw_predictions;
     select count(*) into :p03_means from work.aipw_means;
 quit;
-%p03_assert(&sqlrc eq 0,Two-arm count queries succeed);
-%p03_assert(&p03_predictions eq 1812 and &p03_means eq 6,Two-arm output sizes);
+%p03_assert(condition=&sqlrc eq 0,message=Two-arm count queries succeed);
+%p03_assert(condition=&p03_predictions eq 1812 and &p03_means eq 6,message=Two-arm output sizes);
 
 /* Restore the full population and outputs for later programs. */
 %car_fit();
-%p03_assert(&car_fit_rc eq 0,Three-arm working models restored);
+%p03_assert(condition=&car_fit_rc eq 0,message=Three-arm working models restored);
 %car_aipw();
-%p03_assert(&car_aipw_rc eq 0,Three-arm AIPW outputs restored);
+%p03_assert(condition=&car_aipw_rc eq 0,message=Three-arm AIPW outputs restored);
 %put NOTE: Program 03 tests passed. R comparison runs only when REFERENCE_DIR is set.;

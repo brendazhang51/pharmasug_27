@@ -1,10 +1,34 @@
-/*
- * Linear contrasts of treatment means. Load car_common.sas first.
- * Coefficients: character contrast_id/label, numeric arm_index/coefficient/
- * null_value. Include ALL arm indices, including zero coefficients.
- * Sources: RobinCar/R/robincar-contrast.R. Initial implementation; unvalidated.
- */
+/*==========================================================================
+ Program : 06_treatment_contrasts.sas
+ Project : Robust Covariate Adjustment under CAR (SAS / RobinCar)
+ Purpose : Estimate linear treatment contrasts from the complete mean
+           covariance.
+ Status  : See doc/validation_status.md for verified configurations.
 
+ INPUT  : Treatment means, complete mean covariance and long-form contrast
+          coefficients including every arm.
+ OUTPUT : Contrast estimates, SEs, CIs, z tests, p-values and covariance;
+          CAR_RC.
+
+ IMPORTANT:
+ - Requires SAS/IML; load 00_car_common.sas first. Loading defines macros only.
+ - Use C theta and C V C-prime, retaining all off-diagonal covariance.
+ - Each contrast must specify all arms, including zero coefficients.
+ - Confidence intervals and p-values are marginal normal approximations.
+ - Reference: RobinCar/R/robincar-contrast.R.
+==========================================================================*/
+
+/*==========================================================================
+ Macro   : car_contrast
+ Purpose : Calculate linear contrasts and their full covariance matrix.
+
+ INPUT  : ESTIMATES, VCOV, COEFFICIENTS and ALPHA.
+ OUTPUT : OUT and OUT_VCOV; CAR_RC.
+
+ IMPORTANT:
+ - Coefficient keys are CONTRAST_ID and ARM_INDEX; retain all arm rows.
+ - Zero SE is reported as ZERO_SE with missing z and p-value.
+==========================================================================*/
 %macro car_contrast(
     estimates    = work.car_arm_estimates,
     vcov         = work.car_mean_vcov,
@@ -19,7 +43,7 @@
     %local k m bad rows;
     %if not %sysmacexist(car_require) %then %do;
         %let car_rc = 1;
-        %put ERROR: [CAR] Run car_common.sas first.;
+        %put ERROR: [CAR] Run 00_car_common.sas first.;
         %return;
     %end;
 
@@ -103,7 +127,7 @@
     %if &_car_error_rc %then %goto contrast_fail;
 
     %if &k < 2 or &m = 0 or &rows ne %eval(&k * &k) %then %do;
-        %car_error(Empty contrasts or incomplete mean covariance.);
+        %car_error(message=Empty contrasts or incomplete mean covariance.);
         %goto contrast_fail;
     %end;
 
@@ -125,7 +149,7 @@
     %if &_car_error_rc %then %goto contrast_fail;
 
     %if &bad > 0 %then
-        %car_error(Estimate indices must be 1 through K with finite means.);
+        %car_error(message=Estimate indices must be 1 through K with finite means.);
 
     proc sql noprint;
         select count(*) into :bad trimmed
@@ -145,7 +169,7 @@
     %if &_car_error_rc %then %goto contrast_fail;
 
     %if &bad > 0 %then
-        %car_error(Covariance keys or values are invalid.);
+        %car_error(message=Covariance keys or values are invalid.);
 
     proc sql;
         create table work._car_contrast_check as
@@ -186,7 +210,7 @@
     %if &_car_error_rc %then %goto contrast_fail;
 
     %if &bad > 0 %then
-        %car_error(Each contrast needs K coefficients with one complete label and null value.);
+        %car_error(message=Each contrast needs K coefficients with one complete label and null value.);
     %if &_car_error_rc %then
         %goto contrast_fail;
 
@@ -202,75 +226,80 @@
     %let _car_iml_ok = 0;
 
     proc iml;
-        use work._car_est;
-        read all var {estimate} into theta;
-        close work._car_est;
+        /* Keep the complete calculation in one module: RETURN skips all
+           remaining matrix work and leaves _CAR_IML_OK=0 on failure. */
+        start _car_compute;
+            use work._car_est;
+            read all var {estimate} into theta;
+            close work._car_est;
 
-        use work._car_cov;
-        read all var {covariance} into cv;
-        close work._car_cov;
+            use work._car_cov;
+            read all var {covariance} into cv;
+            close work._car_cov;
 
-        use work._car_coef;
-        read all var {coefficient} into cf;
-        close work._car_coef;
+            use work._car_coef;
+            read all var {coefficient} into cf;
+            close work._car_coef;
 
-        v = shape(cv, &k, &k);
-        c = shape(cf, &m, &k);
-        if any(v = .) | any(c = .) | any(theta = .) then do;
-            print "ERROR: [CAR] Missing contrast inputs.";
-            stop;
-        end;
-        tol = 1e-10 * max(1, max(abs(v)));
-        if max(abs(v - v`)) > tol then do;
-            print "ERROR: [CAR] Mean covariance is not symmetric.";
-            stop;
-        end;
-        v = (v + v`) / 2;
-        call eigen(e, ev, v);
-        if any(e = .) | min(e) < -tol | min(vecdiag(v)) < 0 then do;
-            print "ERROR: [CAR] Mean covariance is not positive semidefinite.";
-            stop;
-        end;
-        delta = c * theta;
-        vc = c * v * c`;
-        vc = (vc + vc`) / 2;
-        if any(delta = .) | any(vc = .) then do;
-            print "ERROR: [CAR] Missing contrast estimate or covariance.";
-            stop;
-        end;
-        if min(vecdiag(vc)) < 0 then do;
-            print "ERROR: [CAR] Negative contrast variance.";
-            stop;
-        end;
-        result = delta || sqrt(vecdiag(vc));
-        create work._car_cnum from result
-            [colname = {estimate se}];
-        append from result;
-        close work._car_cnum;
+            v = shape(cv, &k, &k);
+            c = shape(cf, &m, &k);
+            if any(v = .) | any(c = .) | any(theta = .) then do;
+                print "ERROR: [CAR] Missing contrast inputs.";
+                return;
+            end;
+            tol = 1e-10 * max(1, max(abs(v)));
+            if max(abs(v - v`)) > tol then do;
+                print "ERROR: [CAR] Mean covariance is not symmetric.";
+                return;
+            end;
+            v = (v + v`) / 2;
+            call eigen(e, ev, v);
+            if any(e = .) | min(e) < -tol | min(vecdiag(v)) < 0 then do;
+                print "ERROR: [CAR] Mean covariance is not positive semidefinite.";
+                return;
+            end;
+            delta = c * theta;
+            vc = c * v * c`;
+            vc = (vc + vc`) / 2;
+            if any(delta = .) | any(vc = .) then do;
+                print "ERROR: [CAR] Missing contrast estimate or covariance.";
+                return;
+            end;
+            if min(vecdiag(vc)) < 0 then do;
+                print "ERROR: [CAR] Negative contrast variance.";
+                return;
+            end;
+            result = delta || sqrt(vecdiag(vc));
+            create work._car_cnum from result
+                [colname = {estimate se}];
+            append from result;
+            close work._car_cnum;
 
-        use work._car_labels;
-        read all var {contrast_id} into labels;
-        close work._car_labels;
-        contrast_i = repeat(labels, 1, &m);
-        contrast_j = repeat(labels`, &m, 1);
-        contrast_i = shape(contrast_i, &m * &m, 1);
-        contrast_j = shape(contrast_j, &m * &m, 1);
-        covariance = shape(vc, &m * &m, 1);
-        create work._car_cvcov var {contrast_i contrast_j covariance};
-        append;
-        close work._car_cvcov;
+            use work._car_labels;
+            read all var {contrast_id} into labels;
+            close work._car_labels;
+            contrast_i = repeat(labels, 1, &m);
+            contrast_j = repeat(labels`, &m, 1);
+            contrast_i = shape(contrast_i, &m * &m, 1);
+            contrast_j = shape(contrast_j, &m * &m, 1);
+            covariance = shape(vc, &m * &m, 1);
+            create work._car_cvcov var {contrast_i contrast_j covariance};
+            append;
+            close work._car_cvcov;
 
-        call symputx("_car_iml_ok", 1, "L");
+            call symputx("_car_iml_ok", 1, "L");
+        finish;
+        run _car_compute;
     quit;
     %car_step(context=Contrast step);
     %if &_car_error_rc %then %goto contrast_fail;
     %if &_car_iml_ok ne 1 %then %do;
-        %car_error(Contrast IML computation did not complete.);
+        %car_error(message=Contrast IML computation did not complete.);
         %goto contrast_fail;
     %end;
 
     %if &_car_error_rc %then %do;
-        %car_error(Contrast computation failed. Outputs have been invalidated.);
+        %car_error(message=Contrast computation failed. Outputs have been invalidated.);
         %goto contrast_fail;
     %end;
 
@@ -313,7 +342,7 @@
 
 %contrast_fail:
     %car_clear(outputs=&_car_outputs);
-    %if &_car_error_rc %then %goto contrast_fail;
+    /* The error flag stays set; cleanup must finish instead of retrying. */
     %let car_rc = 1;
     %put ERROR: [CAR] Contrast failed. Specified public outputs invalidated.;
 %mend;

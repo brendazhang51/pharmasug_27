@@ -1,25 +1,60 @@
-/*
- * Shared input checks for programs 04-07. Load once before using their macros.
- * SAS/IML is required by 04-06. All arms are numeric, indexed 1,...,K.
- * Each call handles ONE analysis/model/estimator; filter stacked inputs first.
- * WORK._CAR_* are reserved scratch tables; macros are not re-entrant.
- * CAR_RC: 0 success, 1 failure, 2 reference unavailable (validation only).
- * After safe output-name checks, failures invalidate the specified outputs.
- */
+/*==========================================================================
+ Program : 00_car_common.sas
+ Project : Robust Covariate Adjustment under CAR (SAS / RobinCar)
+ Purpose : Provide shared input checks, output guards and failure handling
+           for 04-07.
+ Status  : See doc/validation_status.md for verified configurations.
+
+ INPUT  : Macro arguments, analysis/result datasets and preceding SAS step
+          statuses.
+ OUTPUT : Validated/ordered WORK._CAR_* tables and shared CAR_RC /
+          _CAR_ERROR_RC.
+
+ IMPORTANT:
+ - Load this file before calling Programs 04-07.
+ - Treatment labels are numeric; arm indices are consecutive integers 1...K.
+ - Each call handles one population/model/estimator; filter stacked inputs.
+ - WORK._CAR_* tables are reserved; macro calls are not re-entrant.
+ - Validate all output names before clearing any public result tables.
+ - CAR_RC: 0=success, 1=failure, 2=reference unavailable in Program 07.
+==========================================================================*/
 
 /* Public return codes are published by completed entrypoints only. */
 %global car_rc _car_error_rc;
-%if %length(%superq(car_rc)) = 0 %then %let car_rc = 1;
+/* Open-code %IF requires a %DO/%END block on the target SAS server. */
+%if %length(%superq(car_rc)) = 0 %then %do;
+    %let car_rc = 1;
+%end;
 %let _car_error_rc = 0;
 
-%macro car_error(message);
+/*==========================================================================
+ Macro   : car_error
+ Purpose : Record and report a failure without cancelling the caller.
+
+ INPUT  : MESSAGE: diagnostic text.
+ OUTPUT : Sets CAR_RC=1 and _CAR_ERROR_RC=1; writes an ERROR log message.
+
+ IMPORTANT:
+ - Use keyword MESSAGE= so equals signs in messages are not parsed as
+   arguments.
+==========================================================================*/
+%macro car_error(message=);
     %global car_rc _car_error_rc;
     %let _car_error_rc = 1;
     %let car_rc = 1;
     %put ERROR: [CAR] &message;
 %mend;
 
-/* Normalize multiline name lists without changing punctuation within names. */
+/*==========================================================================
+ Macro   : car_words
+ Purpose : Normalize whitespace in a macro name list.
+
+ INPUT  : TEXT: a possibly multiline, space-separated list.
+ OUTPUT : Macro text with runs of whitespace replaced by a single blank.
+
+ IMPORTANT:
+ - Preserves punctuation within names; returns no text for an empty input.
+==========================================================================*/
 %macro car_words(text);
     %if %length(%superq(text)) = 0 %then %do;
     %end;
@@ -28,7 +63,16 @@
     %end;
 %mend;
 
-/* COUNTW() cannot be called with no argument after macro expansion. */
+/*==========================================================================
+ Macro   : car_nwords
+ Purpose : Count entries in a normalized space-separated macro list.
+
+ INPUT  : TEXT: a possibly empty name list.
+ OUTPUT : Macro text containing the number of entries.
+
+ IMPORTANT:
+ - Returns zero for empty input without calling COUNTW with no argument.
+==========================================================================*/
 %macro car_nwords(text);
     %local words;
     %let words = %car_words(%superq(text));
@@ -40,21 +84,40 @@
     %end;
 %mend;
 
-/* Capture the immediately preceding step's status; never reset a failure. */
+/*==========================================================================
+ Macro   : car_step
+ Purpose : Check the immediately preceding SAS step execution status.
+
+ INPUT  : CONTEXT, SYSERR; SQL=YES also checks SQLRC.
+ OUTPUT : Sets shared failure codes and logs a message when the step failed.
+
+ IMPORTANT:
+ - Never resets an earlier failure; call immediately after the relevant
+   step.
+==========================================================================*/
 %macro car_step(
     context =,
     sql     = NO
 );
     %if &syserr > 4 %then
-        %car_error(&context failed with SYSERR=&syserr.);
+        %car_error(message=&context failed with SYSERR=&syserr.);
     %if &sql = YES %then %do;
         %if &sqlrc ne 0 %then
-            %car_error(&context failed with SQLRC=&sqlrc.);
+            %car_error(message=&context failed with SQLRC=&sqlrc.);
     %end;
 %mend;
 
-/* Parse literals before macro arithmetic. Blank, special missing, NaN and
-   expressions are rejected, rather than passed to %SYSEVALF. */
+/*==========================================================================
+ Macro   : car_number
+ Purpose : Validate a finite numeric literal before macro arithmetic.
+
+ INPUT  : NAME, VALUE; optional LOWER/UPPER bounds and open/integer flags.
+ OUTPUT : Sets shared failure codes for invalid syntax, missing values or
+          range errors.
+
+ IMPORTANT:
+ - Rejects expressions, special missing values, NaN and nonnumeric strings.
+==========================================================================*/
 %macro car_number(
     name       =,
     value      =,
@@ -70,8 +133,9 @@
         length raw $32767;
         raw = strip(symget('value'));
         number = input(raw, ?? best32.);
+        /* RAW is fixed-width; strip padding at the point of regex matching. */
         valid = not missing(number)
-            and prxmatch('/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/', raw) > 0;
+            and prxmatch('/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/', strip(raw)) > 0;
         if valid then do;
             lo = input(symget('lower'), ?? best32.);
             hi = input(symget('upper'), ?? best32.);
@@ -89,10 +153,20 @@
     run;
     %car_step(context=Numeric parameter check);
     %if &valid ne 1 %then
-        %car_error(&name must be a finite numeric literal within its allowed range.);
+        %car_error(message=&name must be a finite numeric literal within its allowed range.);
 %mend;
 
-/* Guard the derived quantile probability against rounding to an endpoint. */
+/*==========================================================================
+ Macro   : car_alpha
+ Purpose : Validate alpha and the derived normal quantile probability.
+
+ INPUT  : VALUE: the requested alpha.
+ OUTPUT : Sets shared failure codes for invalid alpha or rounded endpoint
+          probability.
+
+ IMPORTANT:
+ - Requires 0 < alpha < 1 and a representable 0 < 1-alpha/2 < 1.
+==========================================================================*/
 %macro car_alpha(value=);
     %local valid;
     %car_number(
@@ -112,11 +186,23 @@
     run;
     %car_step(context=Normal quantile parameter);
     %if &valid ne 1 %then
-        %car_error(ALPHA cannot produce a finite normal quantile at machine precision.);
+        %car_error(message=ALPHA cannot produce a finite normal quantile at machine precision.);
 %mend;
 
-/* V7 one/two-level DATA names only. Canonicalize one-level names to WORK.
-   Validate the entire list before allowing any output removal. */
+/*==========================================================================
+ Macro   : car_output_guard
+ Purpose : Validate every output name before allowing output removal.
+
+ INPUT  : INPUTS, OUTPUTS and EXPECTED output count.
+ OUTPUT : Sets shared failure codes for unsafe, duplicate or overlapping
+          names.
+
+ IMPORTANT:
+ - Accepts plain V7 names; checks library aliases and reserved scratch
+   names.
+ - Never deletes datasets; callers clear outputs only after this guard
+   passes.
+==========================================================================*/
 %macro car_output_guard(
     inputs   =,
     outputs  =,
@@ -132,7 +218,7 @@
         %else %let defaultlib = WORK;
     %end;
     %if %car_nwords(%superq(outputs)) ne &expected %then %do;
-        %car_error(All output dataset names must be supplied.);
+        %car_error(message=All output dataset names must be supplied.);
         %return;
     %end;
     %let output_list =;
@@ -142,46 +228,48 @@
         data _null_;
             length name $128;
             name = strip(symget('candidate'));
-            valid = prxmatch('/^(?:[A-Za-z_][A-Za-z0-9_]{0,7}\.)?[A-Za-z_][A-Za-z0-9_]{0,31}$/', name) > 0;
+            /* NAME is padded to $128; validate its trimmed value. */
+            valid = prxmatch('/^(?:[A-Za-z_][A-Za-z0-9_]{0,7}\.)?[A-Za-z_][A-Za-z0-9_]{0,31}$/', strip(name)) > 0;
             call symputx('bad', not valid, 'L');
         run;
         %car_step(context=Output name check);
         %if &bad %then %do;
-            %car_error(Invalid output dataset name.);
+            %car_error(message=Invalid output dataset name: %superq(candidate).);
             %return;
         %end;
         %let normalized = %upcase(&candidate);
         %if %index(&normalized, .) = 0 %then %do;
             %if "%qupcase(%superq(defaultlib))" ne "WORK" %then %do;
-                %car_error(Use explicit two-level output names when USER is configured.);
+                %car_error(message=Use explicit two-level output names when USER is configured.);
                 %return;
             %end;
             %let normalized = WORK.&normalized;
         %end;
         %if %sysfunc(libref(%scan(&normalized, 1, .))) ne 0 %then %do;
-            %car_error(Output library is not assigned.);
+            %car_error(message=Output library is not assigned.);
             %return;
         %end;
         %if %sysfunc(exist(&normalized, VIEW)) %then %do;
-            %car_error(Output name refers to a view rather than a DATA table.);
+            %car_error(message=Output name refers to a view rather than a DATA table.);
             %return;
         %end;
         %if %index(%scan(&normalized, 2, .), _CAR_) = 1 %then %do;
-            %car_error(Output cannot use reserved _CAR_ names.);
+            %car_error(message=Output cannot use reserved _CAR_ names.);
             %return;
         %end;
         %if %length(%superq(output_list)) > 0 %then %do;
-            %if %sysfunc(findw(&output_list, &normalized, %str( ))) > 0 %then %do;
-                %car_error(Output dataset names must be distinct.);
-                %return;
-            %end;
             %do j = 1 %to %car_nwords(%superq(output_list));
                 %let other = %scan(&output_list, &j, %str( ));
+                /* Avoid FINDW with a blank argument in this SAS environment. */
+                %if &normalized = &other %then %do;
+                    %car_error(message=Output dataset names must be distinct.);
+                    %return;
+                %end;
                 %let output_path = %sysfunc(pathname(%scan(&normalized, 1, .)));
                 %let input_path = %sysfunc(pathname(%scan(&other, 1, .)));
                 %if "%superq(output_path)" = "%superq(input_path)"
                     and %scan(&normalized, 2, .) = %scan(&other, 2, .) %then %do;
-                    %car_error(Output dataset names refer to the same physical table.);
+                    %car_error(message=Output dataset names refer to the same physical table.);
                     %return;
                 %end;
             %end;
@@ -195,18 +283,18 @@
             run;
             %car_step(context=Input name check);
             %if &bad %then %do;
-                %car_error(Use plain V7 input dataset names without dataset options.);
+                %car_error(message=Use plain V7 input dataset names without dataset options.);
                 %return;
             %end;
             %if %index(&other, .) = 0 %then %do;
                 %if "%qupcase(%superq(defaultlib))" ne "WORK" %then %do;
-                    %car_error(Use explicit two-level input names when USER is configured.);
+                    %car_error(message=Use explicit two-level input names when USER is configured.);
                     %return;
                 %end;
                 %let other = WORK.&other;
             %end;
             %if &normalized = &other %then %do;
-                %car_error(Output cannot overwrite an input dataset.);
+                %car_error(message=Output cannot overwrite an input dataset.);
                 %return;
             %end;
             /* Different librefs may point to the same physical directory. */
@@ -216,7 +304,7 @@
                 %let input_path = %sysfunc(pathname(&inputlib));
                 %if "%superq(output_path)" = "%superq(input_path)"
                     and %scan(&normalized, 2, .) = %scan(&other, 2, .) %then %do;
-                    %car_error(Output library aliases an input table.);
+                    %car_error(message=Output library aliases an input table.);
                     %return;
                 %end;
             %end;
@@ -224,10 +312,20 @@
         %let output_list = &output_list &normalized;
     %end;
     %if %length(%superq(output_list)) = 0 %then
-        %car_error(Output dataset names are required.);
+        %car_error(message=Output dataset names are required.);
 %mend;
 
-/* Call ONLY after car_output_guard succeeded. Never clear input tables. */
+/*==========================================================================
+ Macro   : car_clear
+ Purpose : Delete the validated public output tables once.
+
+ INPUT  : OUTPUTS: dataset names already approved by CAR_OUTPUT_GUARD.
+ OUTPUT : Removes existing DATA tables and records cleanup execution errors.
+
+ IMPORTANT:
+ - Call only after all output names pass the guard; never clear input
+   tables.
+==========================================================================*/
 %macro car_clear(outputs=);
     %local i name lib member;
     %let outputs = %car_words(%superq(outputs));
@@ -245,8 +343,17 @@
     %end;
 %mend;
 
-/* Validate published numeric fields as well as procedure return codes.
-   ZERO_SE deliberately leaves z/p_value missing; OK inference may not. */
+/*==========================================================================
+ Macro   : car_result_values
+ Purpose : Reject missing numeric results before publishing success.
+
+ INPUT  : DATA, VALUES and INFERENCE flag.
+ OUTPUT : WORK._CAR_BADNUMERIC; shared failure codes when numeric checks
+          fail.
+
+ IMPORTANT:
+ - For INFERENCE=YES, OK rows require z/p-value; ZERO_SE rows may omit them.
+==========================================================================*/
 %macro car_result_values(
     data      =,
     values    =,
@@ -270,9 +377,21 @@
         context = Published numeric checks,
         sql     = YES
     );
-    %if &bad > 0 %then %car_error(Published output contains missing numeric results.);
+    %if &bad > 0 %then %car_error(message=Published output contains missing numeric results.);
 %mend;
 
+/*==========================================================================
+ Macro   : car_require
+ Purpose : Check that a dataset and its required schema are available.
+
+ INPUT  : DATA; VARS, NUMERIC and CHARACTER variable lists.
+ OUTPUT : Sets shared failure codes for missing datasets, columns or wrong
+          types.
+
+ IMPORTANT:
+ - This helper checks metadata; separate checks validate row values and
+   keys.
+==========================================================================*/
 %macro car_require(
     data      =,
     vars      =,
@@ -284,31 +403,31 @@
     %let numeric = %car_words(%superq(numeric));
     %let character = %car_words(%superq(character));
     %if %length(%superq(data)) = 0 %then %do;
-        %car_error(A dataset name is required.);
+        %car_error(message=A dataset name is required.);
         %return;
     %end;
 
     %if not %sysfunc(exist(&data)) %then %do;
-        %car_error(Dataset &data does not exist.);
+        %car_error(message=Dataset &data does not exist.);
         %return;
     %end;
 
     %let dsid = %sysfunc(open(&data, i));
     %if &dsid = 0 %then %do;
-        %car_error(Cannot open &data.);
+        %car_error(message=Cannot open &data.);
         %return;
     %end;
     %do i = 1 %to %car_nwords(%superq(vars));
         %let name = %scan(&vars, &i);
         %if %sysfunc(varnum(&dsid, &name)) = 0 %then
-            %car_error(Required variable &name is absent from &data.);
+            %car_error(message=Required variable &name is absent from &data.);
     %end;
     %do i = 1 %to %car_nwords(%superq(numeric));
         %let name = %scan(&numeric, &i);
         %let v = %sysfunc(varnum(&dsid, &name));
         %if &v > 0 %then %do;
             %if %sysfunc(vartype(&dsid, &v)) ne N %then
-                %car_error(&data..&name must be numeric.);
+                %car_error(message=&data..&name must be numeric.);
         %end;
     %end;
     %do i = 1 %to %car_nwords(%superq(character));
@@ -316,15 +435,23 @@
         %let v = %sysfunc(varnum(&dsid, &name));
         %if &v > 0 %then %do;
             %if %sysfunc(vartype(&dsid, &v)) ne C %then
-                %car_error(&data..&name must be character.);
+                %car_error(message=&data..&name must be character.);
         %end;
     %end;
 
     %let rc = %sysfunc(close(&dsid));
 %mend;
 
-/* Ensure one row per complete key. */
+/*==========================================================================
+ Macro   : car_unique
+ Purpose : Check complete, unique dataset keys.
 
+ INPUT  : DATA and KEYS.
+ OUTPUT : WORK._CAR_BADKEYS, WORK._CAR_DUPLICATES; shared failure codes.
+
+ IMPORTANT:
+ - Rejects missing key values and duplicate key combinations.
+==========================================================================*/
 %macro car_unique(
     data =,
     keys =
@@ -362,14 +489,23 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 or &duplicates > 0 %then
-        %car_error(&data contains missing or duplicate keys: &keys.);
+        %car_error(message=&data contains missing or duplicate keys: &keys.);
 %mend;
 
-/*
- * Sort and align subject, arm and prediction tables. Validate the complete
- * Cartesian product, not just a count of prediction rows.
- */
+/*==========================================================================
+ Macro   : car_inputs
+ Purpose : Validate and align analysis, treatment-arm and prediction data.
 
+ INPUT  : DATA, PREDICTIONS, ARM_MAP; optional numeric ADD_X columns.
+ OUTPUT : Ordered WORK._CAR_DATA, WORK._CAR_ARMS, WORK._CAR_GRID and
+          diagnostics.
+
+ IMPORTANT:
+ - Requires the complete subject-by-arm prediction grid and empirical
+   PI_HAT.
+ - Rejects inconsistent counts, missing values and invalid treatment
+   mappings.
+==========================================================================*/
 %macro car_inputs(
     data        =,
     predictions =,
@@ -442,7 +578,7 @@
     %if &_car_error_rc %then %return;
 
     %if &n = 0 or &k < 2 %then %do;
-        %car_error(At least two arms and a nonempty analysis population are required.);
+        %car_error(message=At least two arms and a nonempty analysis population are required.);
         %return;
     %end;
 
@@ -464,7 +600,7 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 %then
-        %car_error(Analysis values or covariates are missing.);
+        %car_error(message=Analysis values or covariates are missing.);
 
     data work._car_bad;
         set work._car_arms;
@@ -489,7 +625,7 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 %then
-        %car_error(Invalid arm map: use consecutive indices and at least two observations per arm.);
+        %car_error(message=Invalid arm map: use consecutive indices and at least two observations per arm.);
 
     proc sql noprint;
         select count(*) into :bad trimmed
@@ -505,7 +641,7 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 %then
-        %car_error(Observed treatment is absent from the arm map.);
+        %car_error(message=Observed treatment is absent from the arm map.);
 
     proc sql;
         create table work._car_counts as
@@ -542,7 +678,7 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 %then
-        %car_error(Arm counts or empirical probabilities disagree with the analysis population.);
+        %car_error(message=Arm counts or empirical probabilities disagree with the analysis population.);
 
     proc sql noprint;
         select count(*) into :bad trimmed
@@ -556,11 +692,19 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 or &rows ne %eval(&n * &k) %then
-        %car_error(Predictions must contain exactly one finite value per subject and prediction arm.);
+        %car_error(message=Predictions must contain exactly one finite value per subject and prediction arm.);
 %mend;
 
-/* Reject stale/incorrect point estimates before attaching inference. */
+/*==========================================================================
+ Macro   : car_estimates
+ Purpose : Check supplied means against the re-centered prediction grid.
 
+ INPUT  : ESTIMATES and previously validated WORK._CAR_GRID.
+ OUTPUT : WORK._CAR_EXPECTED, WORK._CAR_ESTCHECK; shared failure codes.
+
+ IMPORTANT:
+ - Requires one mean per arm and agreement within 1e-8 + 1e-6*abs(expected).
+==========================================================================*/
 %macro car_estimates(estimates =);
     %local bad;
     %car_require(
@@ -613,5 +757,5 @@
     %if &_car_error_rc %then %return;
 
     %if &bad > 0 %then
-        %car_error(Point estimates do not match the supplied prediction matrix.);
+        %car_error(message=Point estimates do not match the supplied prediction matrix.);
 %mend;

@@ -46,7 +46,7 @@ if (!requireNamespace("RobinCar", quietly = TRUE) ||
 
 root <- normalizePath(file.path(script_directory, ".."))
 script <- file.path(root, "validation", "robincar_reference.R")
-input <- file.path(root, "robincar_example_data.csv")
+input <- file.path(root, "data", "robincar_example_data.csv")
 rscript <- file.path(R.home("bin"), "Rscript")
 source_data <- utils::read.csv(input)
 

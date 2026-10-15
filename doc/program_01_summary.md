@@ -3,8 +3,10 @@
 `sas/01_data_preparation.sas` imports, checks, standardizes, and summarizes the
 RobinCar example CSV for subsequent outcome modeling.
 
-Before running it, configure your SAS server CSV path in `utilities/utilities.SAS`
-and submit that file in the same SAS session.
+Use the generated outcome-model or inference entry point from
+[the quick start](quickstart.md). It embeds `%car_config` and its call from
+`utilities/config.local.json` before submitting Program 01. Manual callers
+must call `%car_config` first in the same SAS session.
 
 The program:
 
@@ -14,7 +16,7 @@ The program:
 3. Records missing analysis values, invalid treatment levels, and inconsistent
    stratum labels in `QC_ISSUES`, stopping when these errors are found.
 4. Selects the treatment arms listed in `analysis_arms`; the current default
-   retains all three arms (0, 1, 2).
+   retains all three arms (0, 1, 2), unless already set by the run configuration.
 5. Summarizes observed treatment allocation within strata and baseline
    covariates by treatment, and displays the results.
 

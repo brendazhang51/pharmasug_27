@@ -1,7 +1,11 @@
 # Program 03: AIPW Point Estimates
 
-Run `utilities.SAS`, `01_data_preparation.sas`, `02_outcome_models.sas`, and
-`03_aipw_estimation.sas` in that order in one SAS session. Program 03 uses the
+Load `utilities/utilities.SAS` and call `%car_config(csv_path=/your/server/data.csv)`
+with your server CSV path. Run `sas/01_data_preparation.sas`, load
+`sas/02_outcome_models.sas`, call `%car_fit()`, then submit
+`sas/03_aipw_estimation.sas`, all in one SAS session. Program 02 now only
+defines macros, so the explicit fit call is required. Program 03 is not yet
+included in the generated `run/project.py` entry points. Program 03 uses the
 PROC GLM item stores saved by Program 02. Its default driver calls
 `%car_aipw(data=work.analysis_data,method=ALL)` and prints the arm means.
 After loading the file, the macro can also be called for just `ANOVA`,
@@ -17,7 +21,7 @@ setting `TRT` to that target arm. The original assignment is preserved as
 ```
 
 This matches the equivalent expression
-`observed_mean - mean_pred_arm + mean_pred_all` in the project README.
+`observed_mean - mean_pred_arm + mean_pred_all` in the methodology.
 The source columns `y0`, `y1`, and `y2` are never used as outcomes for this
 calculation. Strata are not included in the working models or this point
 estimator. No standard errors, confidence intervals, joint calibration, or
@@ -46,7 +50,7 @@ base-R calculations when `reference_dir` is set. Generate the R files from
 the repository root:
 
 ```sh
-Rscript validation/reference_aipw.R robincar_example_data.csv reference_output
+Rscript validation/reference_aipw.R data/robincar_example_data.csv output/aipw
 ```
 
 Upload `reference_aipw_predictions.csv` and `reference_aipw_means.csv` from

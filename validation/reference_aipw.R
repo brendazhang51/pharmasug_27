@@ -1,5 +1,5 @@
 # Independent base-R reference for Program 03. Run from the repository root:
-# Rscript validation/reference_aipw.R robincar_example_data.csv output_dir [0,1]
+# Rscript validation/reference_aipw.R data/robincar_example_data.csv output_dir [0,1]
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2L) stop("Supply input CSV and output directory; optional arms: 0,1")
 df <- read.csv(args[[1L]], check.names = FALSE)

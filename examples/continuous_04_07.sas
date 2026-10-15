@@ -1,9 +1,9 @@
 /*
- * Run utilities/utilities.SAS and 01 first, then load car_common.sas and 04-07.
+ * Use the generated run/run_inference.sas for configuration and dependencies.
  * This bridge example fits ANCOVA and constructs the proposed 02/03 tables.
  * It does not replace general-purpose 02/03 implementations.
  * Supports the numeric arms retained by 01, including all three source arms.
- * Requires SAS/STAT and SAS/IML. Initial implementation; runtime unvalidated.
+ * Requires SAS/STAT and SAS/IML. See doc/validation_status.md for verification scope.
  * Pass the documented design explicitly. Example:
  * %car_worked_example(car_scheme=simple);
  * That is an algorithm demonstration unless the actual design is verified.
@@ -14,14 +14,24 @@
     car_scheme =,
     alpha      = 0.05
 );
-    %local n k _car_example_outputs;
+    %local n k _car_example_outputs _car_macro_index _car_required_macro;
     %global car_rc _car_error_rc;
     %let car_rc = 1;
     %let _car_error_rc = 0;
     %if not %sysmacexist(car_output_guard) %then %do;
         %let car_rc=1;
-        %put ERROR: [CAR] Load car_common.sas before the example.;
+        %put ERROR: [CAR] Load 00_car_common.sas before the example.;
         %return;
+    %end;
+    /* Check dependencies before fitting or invalidating previous outputs. */
+    %do _car_macro_index=1 %to 3;
+        %let _car_required_macro=%scan(car_calibrate car_variance car_contrast,
+            &_car_macro_index);
+        %if not %sysmacexist(&_car_required_macro) %then %do;
+            %let _car_error_rc=1;
+            %put ERROR: [CAR] Required macro &_car_required_macro is not loaded. Load Programs 04-06 in this SAS session.;
+            %return;
+        %end;
     %end;
     %let _car_example_outputs = work.car_run_settings work.car_arm_map work.car_predictions
         work.car_aipw_predictions work.car_arm_estimates work.car_mean_vcov
@@ -41,7 +51,7 @@
     %car_alpha(value=%superq(alpha));
     %if &_car_error_rc %then %goto example_fail;
     %if %length(%superq(car_scheme)) = 0 %then %do;
-        %car_error(Supply the documented CAR_SCHEME before running this example.);
+        %car_error(message=Supply the documented CAR_SCHEME before running this example.);
         %goto example_fail;
     %end;
 
@@ -70,7 +80,7 @@
     %if &_car_error_rc %then %goto example_fail;
 
     %if &n = 0 %then %do;
-        %car_error(Analysis population is empty.);
+        %car_error(message=Analysis population is empty.);
         %goto example_fail;
     %end;
 
@@ -87,7 +97,7 @@
     quit;
 
     %if &syserr > 4 %then %do;
-        %car_error(ANCOVA fitting failed.);
+        %car_error(message=ANCOVA fitting failed.);
         %goto example_fail;
     %end;
 
@@ -117,7 +127,7 @@
     run;
 
     %if &syserr > 4 %then %do;
-        %car_error(ANCOVA scoring failed.);
+        %car_error(message=ANCOVA scoring failed.);
         %goto example_fail;
     %end;
 
@@ -241,7 +251,7 @@
     %car_step(context=Run settings publication);
     %if &_car_error_rc %then %goto example_fail;
     %let car_rc = 0;
-    %put NOTE: [CAR] Computation complete. Run validation/test_inference.sas separately.;
+    %put NOTE: [CAR] Computation complete. Invoke CAR_TEST_INFERENCE to compare reference results.;
     %return;
 
 %example_fail:

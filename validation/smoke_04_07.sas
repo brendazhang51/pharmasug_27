@@ -1,20 +1,35 @@
 /*
- * Run after loading car_common.sas and 04-07 in the SAME SAS session.
+ * Run after loading 00_car_common.sas and 04-07 in the SAME SAS session.
  * Self-contained analytic fixture, unrelated to the trial's actual design.
- * No files or RobinCar needed. Requires SAS/IML. Unexecuted in this workspace.
+ * No files or RobinCar needed. Requires SAS/IML. See doc/validation_status.md.
  * At completion CAR_TEST_FAILURES=0 is required. Review the SAS log as well.
  * Expected ERROR messages are emitted by the deliberate invalid-input tests.
  */
 %global car_test_failures;
 %let car_test_failures = 0;
 
-%macro car_assert(condition, message);
+%macro car_assert(condition=, message=);
     %if not %sysevalf(&condition, boolean) %then %do;
         %let car_test_failures = %eval(&car_test_failures + 1);
         %put ERROR: [CAR TEST] &message;
     %end;
     %else %put NOTE: [CAR TEST] PASS: &message;
 %mend;
+
+/* Abort before creating fixtures when a required macro has not been loaded. */
+%macro car_smoke_require;
+    %local j name;
+    %do j=1 %to 6;
+        %let name=%scan(car_error car_calibrate car_variance car_contrast
+            car_validate car_test_inference,&j);
+        %if not %sysmacexist(&name) %then %do;
+            %let car_test_failures=1;
+            %put ERROR: [CAR TEST] Required macro &name is not loaded.;
+            %abort cancel;
+        %end;
+    %end;
+%mend;
+%car_smoke_require;
 
 %macro car_smoke;
     %local checked mismatch;
@@ -77,7 +92,7 @@
         arm_map     = work.smoke_arms,
         car_scheme  = simple
     );
-    %car_assert(&car_rc = 0, Simple variance completed);
+    %car_assert(condition=&car_rc = 0, message=Simple variance completed);
     %if &car_rc %then
         %return;
 
@@ -89,12 +104,12 @@
         where abs(covariance - (case when arm_i = arm_j then .4 else 0 end)) > 1e-10;
     quit;
 
-    %car_assert(&mismatch = 0, Simple covariance matches analytic result);
+    %car_assert(condition=&mismatch = 0, message=Simple covariance matches analytic result);
     %car_contrast(
         estimates    = work.smoke_estimates,
         coefficients = work.smoke_coefficients
     );
-    %car_assert(&car_rc = 0, Contrast completed);
+    %car_assert(condition=&car_rc = 0, message=Contrast completed);
     %if &car_rc %then
         %return;
 
@@ -104,7 +119,7 @@
         where abs(estimate - 3) > 1e-10 or abs(se - sqrt(.8)) > 1e-10;
     quit;
 
-    %car_assert(&mismatch = 0, Difference and SE match analytic result);
+    %car_assert(condition=&mismatch = 0, message=Difference and SE match analytic result);
     %car_variance(
         data        = work.smoke_data,
         predictions = work.smoke_predictions,
@@ -113,7 +128,7 @@
         car_scheme  = permuted-block,
         out_vcov    = work.smoke_pb_vcov
     );
-    %car_assert(&car_rc = 0, PB variance completed);
+    %car_assert(condition=&car_rc = 0, message=PB variance completed);
     %if &car_rc %then
         %return;
 
@@ -123,14 +138,14 @@
         where abs(covariance - (case when arm_i = arm_j then .36875 else .03125 end)) > 1e-10;
     quit;
 
-    %car_assert(&mismatch = 0, PB covariance matches analytic correction);
+    %car_assert(condition=&mismatch = 0, message=PB covariance matches analytic correction);
     %car_calibrate(
         data        = work.smoke_data,
         predictions = work.smoke_predictions,
         arm_map     = work.smoke_arms,
         joint       = YES
     );
-    %car_assert(&car_rc = 0, Joint calibration handles aliased constant predictions);
+    %car_assert(condition=&car_rc = 0, message=Joint calibration handles aliased constant predictions);
     %if &car_rc %then
         %return;
 
@@ -140,7 +155,7 @@
         where abs(estimate - (11 + 3 * trt)) > 1e-10;
     quit;
 
-    %car_assert(&mismatch = 0, Calibrated means match analytic result);
+    %car_assert(condition=&mismatch = 0, message=Calibrated means match analytic result);
     %car_variance(
         data           = work.smoke_data,
         predictions    = work.car_cal_predictions,
@@ -149,7 +164,7 @@
         car_scheme     = permuted-block,
         out_components = work.smoke_cal_components
     );
-    %car_assert(&car_rc = 0, Calibrated PB variance completed);
+    %car_assert(condition=&car_rc = 0, message=Calibrated PB variance completed);
     %if &car_rc %then
         %return;
 
@@ -159,7 +174,7 @@
         where abs(v_omega) > 1e-10;
     quit;
 
-    %car_assert(&mismatch = 0, Joint calibration removes stratum residual correction);
+    %car_assert(condition=&mismatch = 0, message=Joint calibration removes stratum residual correction);
 
     data work.smoke_ref;
         set work.smoke_pb_vcov;
@@ -171,7 +186,7 @@
         keys           = arm_i arm_j,
         value          = covariance
     );
-    %car_assert(&car_rc = 0, Identical keyed tables pass validation);
+    %car_assert(condition=&car_rc = 0, message=Identical keyed tables pass validation);
 
     data work.smoke_ref;
         set work.smoke_pb_vcov;
@@ -184,7 +199,7 @@
         keys           = arm_i arm_j,
         value          = covariance
     );
-    %car_assert(&car_rc = 1, Numeric mismatch fails validation);
+    %car_assert(condition=&car_rc = 1, message=Numeric mismatch fails validation);
 
     data work.smoke_ref;
         set work.smoke_pb_vcov;
@@ -197,7 +212,7 @@
         keys           = arm_i arm_j,
         value          = covariance
     );
-    %car_assert(&car_rc = 1, Missing reference key fails validation);
+    %car_assert(condition=&car_rc = 1, message=Missing reference key fails validation);
 
     data work.smoke_ref;
         set work.smoke_pb_vcov;
@@ -211,7 +226,7 @@
         keys           = arm_i arm_j,
         value          = covariance
     );
-    %car_assert(&car_rc = 1, Duplicate reference key fails validation);
+    %car_assert(condition=&car_rc = 1, message=Duplicate reference key fails validation);
     %car_variance(
         data        = work.smoke_data,
         predictions = work.smoke_predictions,
@@ -219,7 +234,7 @@
         arm_map     = work.smoke_arms,
         car_scheme  = NOT_VERIFIED
     );
-    %car_assert(&car_rc = 1, Unknown design is rejected);
+    %car_assert(condition=&car_rc = 1, message=Unknown design is rejected);
 
     data work.smoke_incomplete;
         set work.smoke_predictions;
@@ -231,7 +246,7 @@
         predictions = work.smoke_incomplete,
         arm_map     = work.smoke_arms
     );
-    %car_assert(&car_rc = 1, Incomplete prediction grid is rejected);
+    %car_assert(condition=&car_rc = 1, message=Incomplete prediction grid is rejected);
     %put NOTE: [CAR TEST] Finished with &car_test_failures failures.;
 %mend;
 
@@ -272,15 +287,15 @@
         arm_map     = work.smoke_arms,
         car_scheme  = simple
     );
-    %car_assert(&car_rc = 0, Variance seed succeeds);
+    %car_assert(condition=&car_rc = 0, message=Variance seed succeeds);
 %mend;
 
 %macro car_assert_variance_cleared;
-    %car_assert(&car_rc = 1, Expected variance failure);
-    %car_assert(%sysfunc(exist(work.car_mean_vcov)) = 0, Old covariance removed);
-    %car_assert(%sysfunc(exist(work.car_mean_inference)) = 0, Old inference removed);
-    %car_assert(%sysfunc(exist(work.car_variance_components)) = 0, Old components removed);
-    %car_assert(%sysfunc(exist(work.car_stratum_residuals)) = 0, Old residual summary removed);
+    %car_assert(condition=&car_rc = 1, message=Expected variance failure);
+    %car_assert(condition=%sysfunc(exist(work.car_mean_vcov)) = 0, message=Old covariance removed);
+    %car_assert(condition=%sysfunc(exist(work.car_mean_inference)) = 0, message=Old inference removed);
+    %car_assert(condition=%sysfunc(exist(work.car_variance_components)) = 0, message=Old components removed);
+    %car_assert(condition=%sysfunc(exist(work.car_stratum_residuals)) = 0, message=Old residual summary removed);
 %mend;
 
 %macro car_extended_smoke;
@@ -312,7 +327,7 @@
         car_scheme  = simple,
         out_vcov    = work.smoke_three_cov
     );
-    %car_assert(&car_rc = 0, Three unequal arms succeed);
+    %car_assert(condition=&car_rc = 0, message=Three unequal arms succeed);
     %if &car_rc %then %return;
     proc sql noprint;
         select count(*) into :mismatch trimmed
@@ -320,7 +335,7 @@
         where abs(v.covariance - (case when v.arm_i=v.arm_j
             then (6 * a.n_arm / (a.n_arm - 1)) / a.n_arm else 0 end)) > 1e-10;
     quit;
-    %car_assert(&mismatch = 0, Unequal-arm covariance agrees with analytic values);
+    %car_assert(condition=&mismatch = 0, message=Unequal-arm covariance agrees with analytic values);
 
     /* Reverse all arm indices and deliberately scramble every input's rows. */
     data work.smoke_reverse_arms;
@@ -345,14 +360,14 @@
         car_scheme  = simple,
         out_vcov    = work.smoke_reverse_cov
     );
-    %car_assert(&car_rc = 0, Reversed arm map and scrambled rows succeed);
+    %car_assert(condition=&car_rc = 0, message=Reversed arm map and scrambled rows succeed);
     proc sql noprint;
         select count(*) into :mismatch trimmed
         from work.smoke_reverse_cov a full join work.smoke_three_cov b
         on a.arm_i=4-b.arm_i and a.arm_j=4-b.arm_j
         where missing(a.arm_i) or missing(b.arm_i) or abs(a.covariance-b.covariance)>1e-10;
     quit;
-    %car_assert(&mismatch = 0, Covariance permutes with treatment labels);
+    %car_assert(condition=&mismatch = 0, message=Covariance permutes with treatment labels);
     data work.smoke_reverse_coef;
         length contrast_id $12 label $80;
         contrast_id='DIFF1'; label='Arm 0 minus arm 2'; null_value=0;
@@ -365,12 +380,12 @@
         vcov         = work.smoke_reverse_cov,
         coefficients = work.smoke_reverse_coef
     );
-    %car_assert(&car_rc = 0, Reversed reference-arm contrast succeeds);
+    %car_assert(condition=&car_rc = 0, message=Reversed reference-arm contrast succeeds);
     proc sql noprint;
         select count(*) into :mismatch trimmed from work.car_contrast_results
         where abs(estimate+6)>1e-10;
     quit;
-    %car_assert(&mismatch = 0, Reversed reference-arm difference has correct sign);
+    %car_assert(condition=&mismatch = 0, message=Reversed reference-arm difference has correct sign);
 
     %car_calibrate(
         data        = work.smoke_data,
@@ -378,22 +393,22 @@
         arm_map     = work.smoke_arms,
         joint       = NO
     );
-    %car_assert(&car_rc = 0, Linear calibration accepts constant aliased predictions);
+    %car_assert(condition=&car_rc = 0, message=Linear calibration accepts constant aliased predictions);
     proc sql noprint;
         select count(*) into :mismatch trimmed from work.car_cal_estimates
         where abs(estimate-(11+3*trt))>1e-10;
     quit;
-    %car_assert(&mismatch = 0, Linear calibrated means match analytic values);
+    %car_assert(condition=&mismatch = 0, message=Linear calibrated means match analytic values);
     %put NOTE: [CAR TEST] Next calibration error is expected.;
     %car_calibrate(
         data        = work.smoke_data,
         predictions = work.smoke_incomplete,
         arm_map     = work.smoke_arms
     );
-    %car_assert(&car_rc = 1, Calibration failure after success);
-    %car_assert(%sysfunc(exist(work.car_cal_predictions))=0, Stale calibrated predictions removed);
-    %car_assert(%sysfunc(exist(work.car_cal_estimates))=0, Stale calibrated means removed);
-    %car_assert(%sysfunc(exist(work.car_cal_diagnostics))=0, Stale calibration diagnostics removed);
+    %car_assert(condition=&car_rc = 1, message=Calibration failure after success);
+    %car_assert(condition=%sysfunc(exist(work.car_cal_predictions))=0, message=Stale calibrated predictions removed);
+    %car_assert(condition=%sysfunc(exist(work.car_cal_estimates))=0, message=Stale calibrated means removed);
+    %car_assert(condition=%sysfunc(exist(work.car_cal_diagnostics))=0, message=Stale calibration diagnostics removed);
 
     /* Each invalid scalar is tested AFTER a successful call. */
     %let alpha_values = . bad -1 0 1 1e-300;
@@ -503,7 +518,7 @@
         arm_map     = work.emptycell_arms,
         joint       = YES
     );
-    %car_assert(&car_rc=1, Joint calibration rejects unsupported counterfactual strata);
+    %car_assert(condition=&car_rc=1, message=Joint calibration rejects unsupported counterfactual strata);
 
     /* Name rejection must never delete an input or an unrelated old output. */
     data work.smoke_keep; marker=17; run;
@@ -514,23 +529,23 @@
         out_predictions = work.smoke_keep,
         out_estimates   = work.smoke_keep
     );
-    %car_assert(&car_rc=1, Duplicate outputs rejected);
-    %car_assert(%sysfunc(exist(work.smoke_keep))=1, Unsafe name check preserves old outputs);
+    %car_assert(condition=&car_rc=1, message=Duplicate outputs rejected);
+    %car_assert(condition=%sysfunc(exist(work.smoke_keep))=1, message=Unsafe name check preserves old outputs);
     %car_calibrate(
         data            = work.smoke_data,
         predictions     = work.smoke_predictions,
         arm_map         = work.smoke_arms,
         out_predictions = work.smoke_data
     );
-    %car_assert(&car_rc=1, Input overwrite rejected);
-    %car_assert(%sysfunc(exist(work.smoke_data))=1, Input population preserved);
+    %car_assert(condition=&car_rc=1, message=Input overwrite rejected);
+    %car_assert(condition=%sysfunc(exist(work.smoke_data))=1, message=Input population preserved);
     %car_calibrate(
         data            = work.smoke_data,
         predictions     = work.smoke_predictions,
         arm_map         = work.smoke_arms,
         out_predictions = work._car_forbidden
     );
-    %car_assert(&car_rc=1, Reserved output rejected);
+    %car_assert(condition=&car_rc=1, message=Reserved output rejected);
 
     libname smkalias "%sysfunc(pathname(work))";
     %car_calibrate(
@@ -539,8 +554,8 @@
         arm_map         = work.smoke_arms,
         out_predictions = smkalias.smoke_data
     );
-    %car_assert(&car_rc=1, Input alias overwrite rejected);
-    %car_assert(%sysfunc(exist(work.smoke_data))=1, Aliased input remains present);
+    %car_assert(condition=&car_rc=1, message=Input alias overwrite rejected);
+    %car_assert(condition=%sysfunc(exist(work.smoke_data))=1, message=Aliased input remains present);
     %car_calibrate(
         data            = work.smoke_data,
         predictions     = work.smoke_predictions,
@@ -548,8 +563,8 @@
         out_predictions = work.smoke_keep,
         out_estimates   = smkalias.smoke_keep
     );
-    %car_assert(&car_rc=1, Output aliases rejected before deletion);
-    %car_assert(%sysfunc(exist(work.smoke_keep))=1, Aliased outputs preserved on name failure);
+    %car_assert(condition=&car_rc=1, message=Output aliases rejected before deletion);
+    %car_assert(condition=%sysfunc(exist(work.smoke_keep))=1, message=Aliased outputs preserved on name failure);
     libname smkalias clear;
 
     %do j=1 %to 6;
@@ -558,7 +573,7 @@
             estimates    = work.smoke_estimates,
             coefficients = work.smoke_coefficients
         );
-        %car_assert(&car_rc=0, Contrast seed succeeds);
+        %car_assert(condition=&car_rc=0, message=Contrast seed succeeds);
         data work.smoke_bad_cov;
             set work.car_mean_vcov;
             %if &j=1 %then %do;
@@ -588,9 +603,9 @@
             vcov         = work.smoke_bad_cov,
             coefficients = work.smoke_bad_coef
         );
-        %car_assert(&car_rc=1, Invalid covariance or coefficients rejected);
-        %car_assert(%sysfunc(exist(work.car_contrast_results))=0, Stale contrasts removed);
-        %car_assert(%sysfunc(exist(work.car_contrast_vcov))=0, Stale contrast covariance removed);
+        %car_assert(condition=&car_rc=1, message=Invalid covariance or coefficients rejected);
+        %car_assert(condition=%sysfunc(exist(work.car_contrast_results))=0, message=Stale contrasts removed);
+        %car_assert(condition=%sysfunc(exist(work.car_contrast_vcov))=0, message=Stale contrast covariance removed);
     %end;
     data work.smoke_zero_cov;
         do arm_i=1 to 2;
@@ -602,12 +617,12 @@
         vcov         = work.smoke_zero_cov,
         coefficients = work.smoke_coefficients
     );
-    %car_assert(&car_rc=0, Zero-SE contrast is reported without dividing by zero);
+    %car_assert(condition=&car_rc=0, message=Zero-SE contrast is reported without dividing by zero);
     proc sql noprint;
         select count(*) into :mismatch trimmed from work.car_contrast_results
         where status ne 'ZERO_SE' or not missing(z) or not missing(p_value);
     quit;
-    %car_assert(&mismatch=0, Zero-SE status and missing tests are explicit);
+    %car_assert(condition=&mismatch=0, message=Zero-SE status and missing tests are explicit);
 
     data work.smoke_constant;
         set work.smoke_data;
@@ -624,26 +639,26 @@
         arm_map     = work.constant_arms,
         car_scheme  = simple
     );
-    %car_assert(&car_rc=0, Zero-SE mean inference succeeds);
+    %car_assert(condition=&car_rc=0, message=Zero-SE mean inference succeeds);
     proc sql noprint;
         select count(*) into :mismatch trimmed from work.car_mean_inference
         where status ne 'ZERO_SE' or se ne 0 or not missing(z) or not missing(p_value);
     quit;
-    %car_assert(&mismatch=0, Zero-SE means have explicit status);
+    %car_assert(condition=&mismatch=0, message=Zero-SE means have explicit status);
     %car_calibrate(
         data        = work.smoke_data,
         predictions = work.smoke_predictions,
         arm_map     = work.smoke_arms
     );
-    %car_assert(&car_rc=0, Calibration parameter-test seed succeeds);
+    %car_assert(condition=&car_rc=0, message=Calibration parameter-test seed succeeds);
     %car_calibrate(
         data        = work.smoke_data,
         predictions = work.smoke_predictions,
         arm_map     = work.smoke_arms,
         rank_tol    = bad
     );
-    %car_assert(&car_rc=1, Invalid rank tolerance rejected without macro arithmetic);
-    %car_assert(%sysfunc(exist(work.car_cal_predictions))=0, Invalid rank tolerance clears old predictions);
+    %car_assert(condition=&car_rc=1, message=Invalid rank tolerance rejected without macro arithmetic);
+    %car_assert(condition=%sysfunc(exist(work.car_cal_predictions))=0, message=Invalid rank tolerance clears old predictions);
 
     /* Validation always replaces its previous success/failure report. */
     %do j=1 %to 4;
@@ -653,7 +668,7 @@
             keys           = arm_i arm_j,
             value          = covariance
         );
-        %car_assert(&car_rc=0, Validation report seed succeeds);
+        %car_assert(condition=&car_rc=0, message=Validation report seed succeeds);
         data work.smoke_validation_ref;
             set work.smoke_pb_vcov;
             %if &j=1 %then %do; covariance=.; %end;
@@ -685,8 +700,8 @@
                 value          = covariance
             );
         %end;
-        %car_assert(&car_rc=1, Missing/empty reference or invalid tolerance fails);
-        %car_assert(%sysfunc(exist(work.car_validation_summary))=1, Fresh failure report exists);
+        %car_assert(condition=&car_rc=1, message=Missing/empty reference or invalid tolerance fails);
+        %car_assert(condition=%sysfunc(exist(work.car_validation_summary))=1, message=Fresh failure report exists);
     %end;
     %car_validate(
         sas_data       = work.smoke_pb_vcov,
@@ -694,7 +709,7 @@
         keys           = arm_i arm_j,
         value          = covariance
     );
-    %car_assert(&car_rc=2, Absent reference is NOT_RUN);
+    %car_assert(condition=&car_rc=2, message=Absent reference is NOT_RUN);
 
     /* The suite's metadata rejection needs no RobinCar installation. */
     %if %sysmacexist(car_test_inference) %then %do;
@@ -724,10 +739,12 @@
             settings      = work.smoke_settings,
             arm_map       = work.smoke_arms
         );
-        %car_assert(&car_suite_rc=1, Mismatched alpha settings reject the reference suite);
+        %car_assert(condition=&car_suite_rc=1, message=Mismatched alpha settings reject the reference suite);
     %end;
-    %else %car_assert(0, Load test_inference.sas before the smoke test);
+    %else %car_assert(condition=0, message=Load inference_suite.sas before the smoke test);
     %put NOTE: [CAR TEST] Extended suite finished with &car_test_failures failures.;
 %mend;
 
 %car_extended_smoke;
+
+%put NOTE: CAR_TEST_FAILURES=&CAR_TEST_FAILURES;

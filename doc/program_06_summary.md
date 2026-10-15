@@ -3,7 +3,7 @@
 `sas/06_treatment_contrasts.sas` defines `%car_contrast`. It requires SAS/IML
 and uses treatment means and the complete covariance from Program 05.
 
-Load `sas/car_common.sas` before this file. The file defines its macro without
+Load `sas/00_car_common.sas` before this file. The file defines its macro without
 running an analysis. Outputs are temporary WORK datasets by default. Check
 `CAR_RC` before proceeding: 0 means success and 1 means failure. A failed call
 clears its specified public outputs after output names have been validated;
@@ -41,5 +41,6 @@ Negative variance or invalid covariance causes failure rather than adjustment.
 `validation/smoke_04_07.sas` tests contrasts, off-diagonal covariance,
 malformed matrices, coefficients and zero SE. The full reference suite compares
 against `robincar_contrast(..., contrast_h="diff")`, using explicit arm order
-and the same confidence level. SAS execution and numerical agreement remain
-pending; see [validation instructions](../validation/README.md).
+and the same confidence level. See
+[the verification record](validation_status.md) for completed checks
+and [validation instructions](../validation/README.md) for entry points.
