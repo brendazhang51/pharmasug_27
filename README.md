@@ -22,13 +22,17 @@ python run/project.py build smoke
 
 Submit the **entire generated `run/run.sas` file** to the SAS session.
 The terminal command builds the file; the SAS session executes it.
-Require `CAR_TEST_FAILURES=0` and no unexpected errors.
 
-| Workflow | Terminal command | File to submit in SAS |
+**Use `inference` for the complete analysis.** The workflows are independent;
+you do not need to run all three.
+
+| Workflow | Purpose | Build command |
 |---|---|---|
-| Synthetic tests | `python run/project.py build smoke` | `run/run.sas` |
-| Program 02 and optional R comparison | `python run/project.py build outcome_models` | `run/run.sas` |
-| Programs 01–07, selected-model/RobinCar comparison and automatic export | `python run/project.py build inference` | `run/run.sas` |
+| `smoke` | Test calculations and invalid-input handling with synthetic data; no uploads or R needed. | `python run/project.py build smoke` |
+| `outcome_models` | Check ANOVA/ANCOVA/ANHECOVA fits, with optional base-R comparison. | `python run/project.py build outcome_models` |
+| `inference` | Run the full analysis, compare with RobinCar, and export results and plots. | `python run/project.py build inference` |
+
+See [the quick start](doc/quickstart.md) for data preparation and success checks.
 
 Each build replaces `run/run.sas`; build and submit one workflow at a time.
 The inference run includes Program 03 unchanged. Programs 04–06 directly use
@@ -37,8 +41,7 @@ Standalone Program 03 tests still use the
 [manual workflow](doc/quickstart.md#4-validate-program-03-aipw-point-estimates);
 there is no separate `build aipw` or `reference aipw` command.
 
-Generate references with the same configuration, then upload their CSVs to the
-configured server directories:
+Generate matching R references locally, then upload the CSVs to the server:
 
 ```bash
 python run/project.py reference outcome_models
