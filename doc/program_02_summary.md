@@ -41,8 +41,7 @@ not requested in the new call. Failure removes partially generated public
 outputs; WORK._CF_* scratch tables may remain for investigation. These output
 and scratch names must not be used as input datasets. All outputs are temporary.
 
-The predictions are for each participant's observed arm. Program 03 will
-score every participant under each possible arm. Program 02 does not calculate
+The predictions are for each participant's observed arm. Program 03 scores every participant under each possible arm. Program 02 does not calculate
 AIPW, joint calibration, or final CAR inference. Parameter SEs and p-values are
 ordinary GLM diagnostics, not CAR-adjusted treatment-effect inference. SAS and
 R may use different coefficient coding; compare fitted values and SSE rather

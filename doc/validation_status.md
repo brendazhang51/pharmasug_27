@@ -14,7 +14,7 @@ they are not new SAS executions in the development container.
 | Local checks after layout refactor | 7 entry/config tests, R syntax/helper checks, 15 RobinCar exporter scenarios, unchanged base-R numeric CSVs, source hashes and Markdown links | Passed locally |
 | Generated SAS run files after layout refactor | Same statistical sources, embedded configuration and dependencies | Viya rerun pending |
 | Full data-based two-arm or PB SAS/R comparison | Regenerated references and corresponding SAS run required | Pending |
-| General Program 03 | No public implementation; example supplies its own bridge | Not implemented |
+| Program 03 AIPW point estimates | User confirmed successful testing on 2026-10-14; no new SAS execution in the development container | Passed (user-confirmed) |
 | Experimental binomial/MI example | No numerical equivalence established | Pending |
 
 Passing one configuration does not validate every model, randomization design,

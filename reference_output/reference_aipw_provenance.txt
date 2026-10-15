@@ -1,0 +1,4 @@
+R version 4.3.3 (2024-02-29)
+Input MD5: 5088079f4f9f4ec1befa46b9778c096e
+Rows: 500
+Arms: 0,1,2
