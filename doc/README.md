@@ -7,5 +7,6 @@
   [03](program_03_summary.md), [04](program_04_summary.md), [05](program_05_summary.md),
   [06](program_06_summary.md), [07](program_07_summary.md).
 
-Program 03 provides AIPW point estimates; SAS runtime validation remains pending.
+Program 03 provides AIPW point estimates; testing passed on 2026-10-14
+(user-confirmed).
 The continuous example independently bridges inputs for testing 04–07.

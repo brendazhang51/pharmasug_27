@@ -71,6 +71,7 @@ The optional R script argument `0,1` selects
 two arms for separate manual analysis; the automated SAS test expects the
 original 500-row, three-arm example.
 
-R reference generation succeeded locally, but the new SAS Program 03 and its
-test have not yet been executed on a SAS server. SAS/R numerical agreement
-remains to be confirmed there.
+Program 03 testing passed on 2026-10-14, as confirmed by the user.
+R reference generation also succeeded locally. This status records the
+user-reported successful test; no new SAS execution was performed in the
+development container.

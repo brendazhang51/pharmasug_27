@@ -48,7 +48,8 @@ comparison against RobinCar 1.2.0 passed. These results predate this layout
 refactor. The newly generated entry points and the combined PR #7 Program 02
 report still require Viya execution; see [the verification record](doc/validation_status.md).
 
-Program 03 provides AIPW point estimates; its SAS runtime validation remains pending. The continuous example supplies an ANCOVA
+Program 03 provides AIPW point estimates and was successfully tested on
+2026-10-14, as confirmed by the user. The continuous example supplies an ANCOVA
 and AIPW bridge for checking 04–07. Permuted-block and two-arm synthetic tests
 have passed; complete data-based SAS/R comparisons for those settings remain pending.
 
