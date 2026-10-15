@@ -29,6 +29,11 @@ Require `CAR_TEST_FAILURES=0` and no unexpected errors.
 | Program 02 and optional R comparison | `python run/project.py build outcome_models` | `run/run_outcome_models.sas` |
 | ANCOVA example and complete RobinCar comparison | `python run/project.py build inference` | `run/run_inference.sas` |
 
+Program 03 uses a manual workflow: run Programs 01–03 and then
+`validation/test_aipw_estimation.sas` in one SAS session. See
+[Program 03 setup and validation](doc/quickstart.md#4-validate-program-03-aipw-point-estimates).
+The builder does not yet support `build aipw` or `reference aipw`.
+
 Generate references with the same configuration, then upload their CSVs to the
 configured Viya directories:
 
@@ -81,9 +86,3 @@ See [the methodology](doc/methodology.md) for statistical background.
 The five-arm binomial/MI example is experimental and has not been numerically
 validated. Current continuous inference uses normal approximations and does
 not address missing outcomes, nonlinear contrasts or multiplicity adjustment.
-
-For Program 03, configure `%car_config`, run Program 01, load Program 02
-and call `%car_fit()`, then submit `sas/03_aipw_estimation.sas`. See its
-[validation instructions](doc/program_03_summary.md). It is not yet included
-in the generated entry points. `sas/export_results.sas` exports available
-Program 02/03 tables from the same session.

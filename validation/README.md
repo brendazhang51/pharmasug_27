@@ -6,6 +6,8 @@ Shared helpers live in [utilities/](../utilities/README.md).
 
 | File | Purpose |
 |---|---|
+| `reference_aipw.R` | Independent base-R Program 03 predictions and AIPW arm means |
+| `test_aipw_estimation.sas` | Program 03 assertions, two-arm checks and optional SAS/R comparison |
 | `reference_outcome_models.R` | Independent base-R working-model fit reference |
 | `robincar_reference.R` | RobinCar 1.2.0 original and calibrated inference reference |
 | `test_reference_export.R` | Base-R helper checks and 15 real RobinCar integration scenarios |
@@ -54,3 +56,13 @@ if later comparisons pass. Numeric defaults are `atol=1e-8`, `rtol=1e-6`.
 
 See [the verification record](../doc/validation_status.md) for completed checks
 and outstanding Viya runs after the layout refactor.
+
+## Program 03
+
+Program 03 uses manual submission rather than the entry-point builder. Follow
+[the quick start](../doc/quickstart.md#4-validate-program-03-aipw-point-estimates)
+for loading order, reference generation, upload paths and success checks.
+Its references are generated in `output/aipw/` using base R. Set `reference_dir`
+to the uploaded AIPW CSV directory before running `test_aipw_estimation.sas`;
+it shares that macro variable with the Program 02 comparison. Testing passed
+on 2026-10-14 (user-confirmed).

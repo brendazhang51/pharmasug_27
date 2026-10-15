@@ -2,7 +2,8 @@
 
 Use [the quick start](../doc/quickstart.md) and generated files in `run/` for
 complete submissions. `sas/` is the implementation layer. Program 01 runs its
-data preparation on submission; Program 02 and 04–07 define macros without
+data preparation on submission; Program 03 automatically calls `%car_aipw()`
+on submission after Program 02 has been fitted. Program 02 and 04–07 define macros without
 automatically running analyses. Load `00_car_common.sas` before calling 04–07.
 
 Programs 04–06 require SAS/IML. Program 02 and the continuous example require
@@ -70,3 +71,9 @@ See [validation implementations](../validation/README.md),
 [verification record](../doc/validation_status.md). Passing the earlier synthetic
 and three-arm ANCOVA/simple comparisons does not validate untested configurations
 or the newly assembled entry points before their Viya rerun.
+
+Program 03 has a [manual setup and validation workflow](../doc/quickstart.md#4-validate-program-03-aipw-point-estimates),
+using `%car_fit()` followed by `03_aipw_estimation.sas`. It requires SAS/STAT
+and is not yet included in generated entry points. Its output tables differ
+from the 04–07 input contracts above; the continuous example still constructs
+its own bridge. See [Program 03](../doc/program_03_summary.md) for details.

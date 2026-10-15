@@ -7,7 +7,7 @@
 - VS Code with the SAS extension, connected to Viya using your own account and
   connection profile. The SAS environment must provide SAS/STAT and SAS/IML.
 - R with `Rscript` available in the terminal for reference generation. Program
-  02's reference uses base R; the inference reference requires RobinCar 1.2.0.
+  02 and 03 references use base R; the inference reference requires RobinCar 1.2.0.
   R and RobinCar are not needed for the synthetic smoke test.
 
 Clone the repository, or update your existing checkout, before following the
@@ -99,7 +99,73 @@ and runs its tests and R comparison. The automated fixture requires the original
 no failed assertions, and no unexpected SAS errors. Inspect `WORK.P02_R_SUMMARY`
 and the `WORK.P02_R_*_COMPARE` tables.
 
-## 4. Validate the continuous inference example
+## 4. Validate Program 03 AIPW point estimates
+
+Program 03 testing passed on 2026-10-14 (user-confirmed). Its workflow is
+manual; `run/project.py` does not yet provide `build aipw` or `reference aipw`.
+Use the original 500-row, three-arm CSV for the automated test.
+
+Generate its independent base-R references from repository root:
+
+```bash
+Rscript validation/reference_aipw.R data/robincar_example_data.csv output/aipw
+```
+
+Upload `reference_aipw_predictions.csv` and `reference_aipw_means.csv` from
+`output/aipw/` to an existing directory accessible to your Viya account.
+Retain `reference_aipw_provenance.txt` locally. The generated references are
+ignored by Git; you do not need a checked-in `reference_output/` directory.
+
+Submit the following files and calls **in order, in the same SAS session**:
+
+1. Submit `utilities/utilities.SAS` to define the configuration macro, then
+   call it with your uploaded CSV path:
+
+   ```sas
+   %car_config(csv_path=/your/server/robincar_example_data.csv, arms=0 1 2);
+   ```
+
+2. Submit `sas/01_data_preparation.sas`.
+3. Submit `sas/02_outcome_models.sas`, then run `%car_fit();` to fit all three
+   working models. Loading Program 02 alone does not fit them.
+4. Submit `sas/03_aipw_estimation.sas`. Its driver automatically calls
+   `%car_aipw()` and prints the arm means.
+5. Set the directory containing the two uploaded AIPW reference CSVs, then
+   submit `validation/test_aipw_estimation.sas`:
+
+   ```sas
+   %let reference_dir=/your/server/aipw;
+   ```
+
+`reference_dir` is shared with Program 02's comparison. Set it to the AIPW
+reference directory **after** any Program 02 tests; reset it to the Program 02
+reference directory before rerunning those tests. If it is blank, the Program
+03 R comparison is skipped, so the final test message alone does not establish
+SAS/R agreement.
+
+| Check | Expected result |
+|---|---|
+| Program 02 fits | `CAR_FIT_RC=0` |
+| Program 03 computation | `CAR_AIPW_RC=0` |
+| `WORK.AIPW_PREDICTIONS` | 4,500 rows across three models and three target arms |
+| `WORK.AIPW_MEANS` | Nine arm/model rows |
+| R comparison | Log contains `Program 03 SAS/R predictions and AIPW means agree.` |
+| Test completion | Log contains `Program 03 tests passed.` and no failed assertions or unexpected errors |
+
+Inspect `WORK.P03_R_MEAN_COMPARE` for the nine SAS/R arm-mean comparisons.
+The test also checks a two-arm subset, then restores the full three-arm fits
+and AIPW outputs. Program 03 produces point estimates; the separate continuous
+inference example below still uses its own ANCOVA/AIPW bridge for Programs 04–07.
+
+To export the available Program 02/03 results, edit `export_dir` in
+`sas/export_results.sas` to an existing writable Viya directory, then submit
+that file in the same session. It writes `sas_aipw_means.csv`,
+`sas_aipw_predictions.csv` and, when available, `p03_r_mean_compare.csv`, plus
+available Program 02 comparison tables. Missing tables are skipped. Files are
+written on the SAS server; download them separately if needed. See the
+[Program 03 summary](program_03_summary.md) for the estimator and output fields.
+
+## 5. Validate the continuous inference example
 
 ```bash
 python run/project.py reference inference
@@ -132,7 +198,7 @@ run is not validated. A calculation success alone does not establish SAS/R
 agreement. The driver prints up to 50 detail rows on failure; full details remain
 in `WORK.CAR_VALIDATION_DETAILS`.
 
-## 5. Keep a verification record
+## 6. Keep a verification record
 
 Save the SAS log and summary for each configuration, together with the reference
 settings, input hash and session information. `output/build/` records source
