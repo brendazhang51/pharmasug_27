@@ -1,0 +1,10 @@
+Dataset: ACTG175
+Source package: speff2trial
+Source package version: 1.0.5
+Source archive URL: https://cran.r-project.org/src/contrib/speff2trial_1.0.5.tar.gz
+Source archive SHA-256: ecb3579670c360786da55346f783091f6b71bf6a49a920ab1224d254cd55e4a1
+Source package file: speff2trial/data/ACTG175.txt
+Transformation: none; original row and column order retained
+Dimensions: 2139 rows x 27 columns
+CSV MD5: d771cc6340205cd1a9af5393a02497c0
+R version 4.3.3 (2024-02-29)
