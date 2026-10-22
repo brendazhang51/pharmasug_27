@@ -32,7 +32,13 @@ Rebuild whenever sources or configuration change.
 
 ## Inference workflow
 
-![Flowchart of the SAS inference workflow, from JSON configuration and CSV input through Programs 01–07, RobinCar validation and automatic export.](assets/inference-workflow.svg)
+<p align="center">
+  <img
+    src="assets/inference-workflow.svg"
+    alt="Flowchart of the SAS inference workflow, from JSON configuration and CSV input through Programs 01–07, RobinCar validation and automatic export."
+    width="700"
+  />
+</p>
 
 The left path uses the selected model’s predictions and AIPW estimates directly;
 the right path first applies joint calibration. Both paths compute CAR standard
